@@ -1,0 +1,25 @@
+# golangci-lint v2 配置
+# 核心自定义规则：ADR-0004「框架只进壳层」—— internal/biz 禁止依赖 kratos / grpc（机器强制）
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        biz-no-framework:
+          files:
+            - "**/internal/biz/**"
+          deny:
+            - pkg: "github.com/go-kratos/kratos"
+              desc: "ADR-0004：biz 领域层禁止依赖 kratos（框架只进壳层）"
+        biz-no-transport:
+          files:
+            - "**/internal/biz/**"
+          deny:
+            - pkg: "google.golang.org/grpc"
+              desc: "ADR-0004：biz 领域层禁止依赖传输层"
+            - pkg: "net/http"
+              desc: "ADR-0004：biz 领域层禁止依赖传输层"

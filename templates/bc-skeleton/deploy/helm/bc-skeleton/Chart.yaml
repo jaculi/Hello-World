@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bc-skeleton
+description: JSL 平台 BC 骨架模板 Chart（复制新 BC 时改名）
+type: application
+version: 0.1.0
+appVersion: "v0.0.1"

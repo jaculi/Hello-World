@@ -1,0 +1,17 @@
+# 构建产物
+bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# 本地环境
+.env
+*.local.yaml
+
+# 工具生成
+api/gen/
+
+# IDE
+.idea/
+.vscode/

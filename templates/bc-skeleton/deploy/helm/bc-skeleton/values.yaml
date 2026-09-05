@@ -1,0 +1,20 @@
+# BC 骨架 Helm values —— 生产化参数（HPA/配额/探针）按 BP-04 §6 与 BP-07 §3 校准
+replicaCount: 2
+
+image:
+  repository: jsl/bc-skeleton
+  tag: ""            # 默认使用 Chart appVersion，由 CI 制品链注入（BP-04 §6）
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP    # 仅集群内可达，对外统一经 APISIX 网关（BP-02 §2.1）
+  httpPort: 8000
+  grpcPort: 9000
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
