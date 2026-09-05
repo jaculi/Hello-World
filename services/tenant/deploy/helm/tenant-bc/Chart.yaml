@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tenant-bc
+description: JSL 平台 BC-P1 租户与站点服务
+type: application
+version: 0.1.0
+appVersion: "v0.0.1"

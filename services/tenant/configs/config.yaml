@@ -1,0 +1,6 @@
+# tenant-bc 配置（M1 起由 pkg/config 加载；当前端口约定见 internal/server）
+server:
+  http:
+    addr: ":8000"
+  grpc:
+    addr: ":9000"
