@@ -32,7 +32,8 @@ func TestADR0004_NoFrameworkInDomainLayers(t *testing.T) {
 	for _, dir := range layerDirs {
 		abs := filepath.Join(root, filepath.FromSlash(dir))
 		fset := token.NewFileSet()
-		pkgs, err := parser.ParseDir(fset, abs, func(fi os.FileInfo) bool {
+		// 仅做目录级 AST 导入扫描，ParseDir 不关联 build tag 正是此处期望行为
+		pkgs, err := parser.ParseDir(fset, abs, func(fi os.FileInfo) bool { //nolint:staticcheck // SA1019 弃用 API 对本测试更简单直接
 			// 排除测试文件（测试可引用框架做 mock）
 			return !strings.HasSuffix(fi.Name(), "_test.go")
 		}, parser.ImportsOnly)

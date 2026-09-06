@@ -18,4 +18,5 @@ jobs:
           lint: true
           format: false
           breaking: true
+          push: false
           breaking_against: "https://github.com/${{ github.repository }}.git#branch=master,subdir=api"

@@ -100,9 +100,7 @@ func (m *MemTenantRepo) Insert(_ context.Context, _ Tx, t *Tenant, sub *Subscrip
 	cp := *t
 	m.tenants[t.ID] = &cp
 	m.names[t.Name] = t.ID
-	for _, a := range assemblies {
-		m.assemblyByTenant[t.ID] = append(m.assemblyByTenant[t.ID], a)
-	}
+	m.assemblyByTenant[t.ID] = append(m.assemblyByTenant[t.ID], assemblies...)
 	_ = sub // 订阅随租户落库（替身不单列存储）
 	return nil
 }

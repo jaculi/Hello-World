@@ -68,8 +68,6 @@ type fakeSink struct {
 	delivered []*eventsv1.EventEnvelope
 }
 
-func newFakeSink(failAfter int) *fakeSink { return &fakeSink{failAfter: failAfter} }
-
 func (f *fakeSink) Publish(_ context.Context, env *eventsv1.EventEnvelope) error {
 	if f.failAfter >= 0 && len(f.delivered) >= f.failAfter {
 		return errors.New("kafka down")
