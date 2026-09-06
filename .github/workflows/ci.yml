@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   packages: write # GHCR 推送（ghcr.io/<owner>/tenant-bc）
+  id-token: write # cosign keyless 签名需 OIDC token（Fulcio）
 
 jobs:
   buf:
@@ -90,6 +91,7 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: 构建 tenant-bc 镜像
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -98,6 +100,27 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
           load: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+      - name: Keyless 签名（cosign + Fulcio/Rekor，仅 master 推送）
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: sigstore/cosign-installer@v3.7.0
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        name: 签名镜像（按 digest，OIDC 无密钥）
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/tenant-bc
+        run: |
+          cosign sign --yes "${IMAGE}@${IMAGE_DIGEST}"
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        name: 验证签名（Fulcio 证书 + GitHub Actions 发行者）
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/tenant-bc
+          REPO: ${{ github.repository }}
+        run: |
+          cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "^https://github.com/${REPO}/" \
+            "${IMAGE}@${IMAGE_DIGEST}" | jq .
       - name: 制品冒烟（容器以非 root 启动并响应 /healthz）
         run: |
           IMG="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tenant-bc:sha-${GITHUB_SHA::7}"
