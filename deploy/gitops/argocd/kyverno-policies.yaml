@@ -1,5 +1,6 @@
-# ArgoCD Application：Kyverno 策略集（M7，GitOps）
+# ArgoCD Application：Kyverno 策略集（M10 CEL 迁移，GitOps）
 # 策略源在本仓 deploy/kyverno/policies/，随本仓版本演进。
+# M10 起策略由 ClusterPolicy（kyverno.io）迁移至 CEL 策略（policies.kyverno.io）。
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -20,9 +21,18 @@ spec:
     automated:
       prune: true
       selfHeal: true
-  # 依赖 Kyverno CRD 就绪（由 kyverno Application 提供）
+  # 依赖 Kyverno CRD 就绪（由 kyverno Application 提供）；忽略运行时 status 字段
   ignoreDifferences:
     - group: kyverno.io
       kind: ClusterPolicy
       jsonPointers:
         - /status
+    - group: policies.kyverno.io
+      kind: ImageValidatingPolicy
+      jsonPointers:
+        - /status
+    - group: policies.kyverno.io
+      kind: ValidatingPolicy
+      jsonPointers:
+        - /status
+

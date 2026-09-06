@@ -1,11 +1,14 @@
-# platform 命名空间镜像允许清单（M9 生产化 / BP-05 默认拒绝原则）
+# platform 命名空间镜像允许清单（M10 CEL 迁移 / BP-05 默认拒绝原则）
+#
+# 从 M9 的 ClusterPolicy（kyverno.io/v1，已废弃）迁移至 CEL ValidatingPolicy
+# （policies.kyverno.io/v1）。
 #
 # 作用：纵深防御第二道闸——签名校验（verify-image-signatures）只约束"平台镜像必须可信签"，
 # 本策略反向收敛"platform 命名空间只能运行平台仓库镜像"：任何第三方镜像（含
 # Docker Hub/Quay 等）一律拒绝，防止业务 Pod 夹带未纳入供应链治理的镜像。
 # 第三方组件（如网关、观测栈）部署在各自命名空间，不受影响；确需引入时走例外评审。
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: platform-registry-allowlist
   annotations:
@@ -13,37 +16,34 @@ metadata:
     policies.kyverno.io/category: Supply Chain Security
     policies.kyverno.io/severity: high
     policies.kyverno.io/subject: Pod
-    policies.kyverno.io/description: >-
-      platform 命名空间内 Pod 的全部容器（含初始化容器）必须使用
-      ghcr.io/jaculi/* 平台镜像，默认拒绝一切外部镜像来源。
 spec:
-  validationFailureAction: Enforce
-  background: true
-  webhookTimeoutSeconds: 30
+  validationActions: [Deny]
   failurePolicy: Fail
-  rules:
-    # foreach 逐容器校验；init/ephemeral 容器可能缺省，用 `|| []` 回退为空列表
-    # （pattern 直接匹配缺省列表会对无 init 容器的普通 Pod 误判拒绝）。
-    - name: only-platform-images-in-platform-ns
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              namespaceSelector:
-                matchLabels:
-                  kubernetes.io/metadata.name: platform
-      validate:
-        message: >-
-          platform 命名空间仅允许 ghcr.io/jaculi/* 平台镜像
-          （BP-05 默认拒绝；第三方组件部署于独立命名空间，例外走评审）。
-        foreach:
-          - list: request.object.spec.containers
-            pattern:
-              image: "ghcr.io/jaculi/*:*"
-          - list: 'request.object.spec.initContainers || `[]`'
-            pattern:
-              image: "ghcr.io/jaculi/*:*"
-          - list: 'request.object.spec.ephemeralContainers || `[]`'
-            pattern:
-              image: "ghcr.io/jaculi/*:*"
+  webhookConfiguration:
+    timeoutSeconds: 30
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    # CEL 直接遍历容器列表；init/ephemeral 容器缺省时用 orValue([]) 回退，
+    # 避免对无 init 容器的普通 Pod 误判拒绝（M9 已踩坑的同类问题，CEL 写法天然规避）。
+    - expression: >-
+        object.spec.containers.all(c, c.image.startsWith('ghcr.io/jaculi/'))
+      message: "platform 命名空间仅允许 ghcr.io/jaculi/* 平台镜像（BP-05 默认拒绝；第三方组件部署于独立命名空间，例外走评审）"
+    - expression: >-
+        (object.spec.?initContainers.orValue([])).all(c, c.image.startsWith('ghcr.io/jaculi/'))
+      message: "platform 命名空间初始化容器同样仅允许 ghcr.io/jaculi/* 平台镜像"
+    - expression: >-
+        (object.spec.?ephemeralContainers.orValue([])).all(c, c.image.startsWith('ghcr.io/jaculi/'))
+      message: "platform 命名空间临时容器同样仅允许 ghcr.io/jaculi/* 平台镜像"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true
