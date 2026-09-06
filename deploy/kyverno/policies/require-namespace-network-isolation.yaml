@@ -1,0 +1,40 @@
+# 命名空间网络隔离声明（M12 / BP-05 纵深防御·零信任网络）
+#
+# CEL ValidatingPolicy 无法跨资源查询（不能在 namespace 创建时检查其下的 NetworkPolicy），
+# 因此采用「标签声明 + GitOps 流程约束」：
+#   - 命名空间创建时必须带 `jsl-platform/network-policy: default-deny` 标签，
+#     表明该命名空间已配置默认拒绝 NetworkPolicy（由平台基线/GitOps 同步）；
+#   - 实际 NetworkPolicy 由 GitOps 基线或 Kyverno CleanupPolicy 保障。
+# 若命名空间无需网络隔离（如系统命名空间），须经评审后例外。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-namespace-network-isolation
+  annotations:
+    policies.kyverno.io/title: 命名空间网络隔离声明
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Namespace
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["namespaces"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.metadata.?labels.orValue({}).exists(key,
+          key == 'jsl-platform/network-policy' &&
+          object.metadata.labels[key] == 'default-deny'
+        )
+      message: "命名空间必须声明网络隔离（标签 jsl-platform/network-policy=default-deny），表明已配置默认拒绝 NetworkPolicy"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true

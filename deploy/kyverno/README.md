@@ -1,18 +1,29 @@
-# deploy/kyverno/ —— 准入控制（M11 纵深防御）
+# deploy/kyverno/ —— 准入控制（M12 生产基线·八层纵深防御）
 
-> 依据：[BP-05 §7.1.2 供应链安全](../blueprint/05-security-architecture.md)（包签名验证、镜像扫描、SBOM）、BP-05 默认拒绝 + 纵深防御原则
+> 依据：[BP-05 §7.1.2 供应链安全](../blueprint/05-security-architecture.md)（包签名验证、镜像扫描、SBOM）、BP-05 默认拒绝 + 纵深防御原则、BP-04 资源治理
 > 这是 CI 侧 cosign keyless 签名（`.github/workflows/ci.yml` ⑤ 制品 job）的**运行时消费端**。
 
 ## 作用
 
-四层准入（纵深防御，均为 Deny + fail-closed），全部使用 **CEL 策略**（`policies.kyverno.io/v1`），覆盖 platform 命名空间：
+八层准入（纵深防御，均为 Deny + fail-closed），全部使用 **CEL 策略**（`policies.kyverno.io/v1`）：
+
+### Pod 级（platform 命名空间）
 
 1. **签名校验**（`verify-image-signatures`，`ImageValidatingPolicy`）：`ghcr.io/jaculi/*:*` 全部平台镜像必须具备由 GitHub Actions OIDC 签发的 cosign keyless 签名；验证通过后自动 pin 到 digest（`mutateDigest`），防标签重放。后台扫描对存量 Pod 生成 PolicyReport。
 2. **允许清单**（`platform-registry-allowlist`，`ValidatingPolicy`）：platform 命名空间内全部容器（含 init/ephemeral）只允许 `ghcr.io/jaculi/*` 镜像，防止业务 Pod 夹带未纳入供应链治理的第三方镜像。
 3. **Pod 安全标准 restricted**（`require-pod-security-restricted`，`ValidatingPolicy`）：强制 privileged=false、allowPrivilegeEscalation=false、runAsNonRoot=true、readOnlyRootFilesystem=true、capabilities.drop=[ALL]、seccompProfile=RuntimeDefault、禁止 hostNetwork/hostPID/hostIPC/hostPath。防容器逃逸与权限提升。
 4. **资源限制强制**（`require-resource-limits`，`ValidatingPolicy`）：全部容器必须声明 CPU/内存的 requests 与 limits，防止资源耗尽与调度失衡。
+5. **禁止 SA token 自动挂载**（`disable-automount-sa-token`，`ValidatingPolicy`）：Pod 必须显式 `automountServiceAccountToken=false`，且禁止 projected 卷挂载 serviceAccountToken，减少凭证泄露面。
+
+### Namespace 级（全集群）
+
+6. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
+7. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
+8. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
 
 **策略例外**：默认拒绝，确需豁免时经安全评审后创建 `PolicyException`（仅允许在 kyverno 命名空间创建，由平台管理员统一管理），须设 `expiresAt` 到期自动失效。
+
+> 注：CEL ValidatingPolicy 无法跨资源查询（不能在 namespace 创建时检查其下的 NetworkPolicy/ResourceQuota），因此网络隔离与资源配额采用「标签声明 + GitOps 流程约束」模式，实际 NetworkPolicy/ResourceQuota 由平台基线保障。
 
 ## 目录结构
 
@@ -21,10 +32,14 @@ deploy/kyverno/
 ├── values.yaml                          # Kyverno Helm 安装 values（HA + PolicyException 启用）
 ├── README.md
 ├── policies/                            # 策略集（CEL，ArgoCD 同步）
-│   ├── verify-image-signatures.yaml     # ImageValidatingPolicy：cosign keyless 签名校验
-│   ├── platform-registry-allowlist.yaml # ValidatingPolicy：platform 镜像允许清单
+│   ├── verify-image-signatures.yaml          # ImageValidatingPolicy：cosign keyless 签名校验
+│   ├── platform-registry-allowlist.yaml      # ValidatingPolicy：platform 镜像允许清单
 │   ├── require-pod-security-restricted.yaml  # ValidatingPolicy：PSS restricted
-│   └── require-resource-limits.yaml     # ValidatingPolicy：资源 requests/limits 强制
+│   ├── require-resource-limits.yaml          # ValidatingPolicy：资源 requests/limits 强制
+│   ├── disable-automount-sa-token.yaml       # ValidatingPolicy：禁止 SA token 自动挂载
+│   ├── require-namespace-network-isolation.yaml  # ValidatingPolicy：命名空间网络隔离声明
+│   ├── require-namespace-quota.yaml          # ValidatingPolicy：命名空间资源配额声明
+│   └── require-namespace-labels.yaml         # ValidatingPolicy：命名空间必需标签
 └── exceptions/                          # 策略例外模板（PolicyException）
     ├── README.md                        # 例外流程说明
     └── template.yaml                    # 例外模板（namespace=kyverno，须 expiresAt）

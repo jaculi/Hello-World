@@ -1,0 +1,42 @@
+# 命名空间必需标签（M12 / BP-05 审计归属 + BP-07 计费）
+#
+# 强制所有命名空间携带归属与环境标签，用于成本分摊、审计追溯与环境隔离。
+# 必需标签：
+#   - jsl-platform/team          —— 负责团队
+#   - jsl-platform/environment   —— 环境（dev/staging/prod）
+#   - jsl-platform/cost-center   —— 成本中心
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-namespace-labels
+  annotations:
+    policies.kyverno.io/title: 命名空间必需标签
+    policies.kyverno.io/category: Governance
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Namespace
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["namespaces"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.metadata.?labels.orValue({}).exists(key, key == 'jsl-platform/team')
+      message: "命名空间必须有 jsl-platform/team 标签（负责团队）"
+    - expression: >-
+        object.metadata.?labels.orValue({}).exists(key, key == 'jsl-platform/environment')
+      message: "命名空间必须有 jsl-platform/environment 标签（dev/staging/prod）"
+    - expression: >-
+        object.metadata.?labels.orValue({}).exists(key, key == 'jsl-platform/cost-center')
+      message: "命名空间必须有 jsl-platform/cost-center 标签（成本中心）"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true

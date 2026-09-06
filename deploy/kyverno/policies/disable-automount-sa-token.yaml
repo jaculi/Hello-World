@@ -1,0 +1,45 @@
+# 禁止 ServiceAccount token 自动挂载（M12 / BP-05 纵深防御）
+#
+# 强制 platform 命名空间的 Pod 不自动挂载 ServiceAccount token，
+# 减少容器被攻破后窃取集群凭证的攻击面。
+# 确需访问 API Server 的 Pod 须显式设置 automountServiceAccountToken: true，
+# 并绑定最小权限 ServiceAccount。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disable-automount-sa-token
+  annotations:
+    policies.kyverno.io/title: 禁止 ServiceAccount token 自动挂载
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 15
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    # Pod 级别：automountServiceAccountToken 必须显式为 false
+    - expression: >-
+        object.spec.?automountServiceAccountToken.orValue(true) == false
+      message: "Pod 必须显式设置 spec.automountServiceAccountToken=false（禁止自动挂载 SA token）"
+    # 容器级别：每个容器不挂载 serviceAccountToken 卷
+    - expression: >-
+        (object.spec.?volumes.orValue([])).all(v,
+          (v.?projected.?sources.orValue([])).all(s, s.?serviceAccountToken == null)
+        )
+      message: "禁止通过 projected 卷挂载 serviceAccountToken"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true

@@ -1,0 +1,37 @@
+# 命名空间资源配额声明（M12 / BP-04 资源治理）
+#
+# CEL ValidatingPolicy 无法跨资源查询 ResourceQuota，采用标签声明：
+# 命名空间必须带 `jsl-platform/resource-quota: enforced` 标签，
+# 表明已配置 ResourceQuota（由平台基线/GitOps 同步），防止命名空间无限消耗集群资源。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-namespace-quota
+  annotations:
+    policies.kyverno.io/title: 命名空间资源配额声明
+    policies.kyverno.io/category: Resource Management
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Namespace
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["namespaces"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.metadata.?labels.orValue({}).exists(key,
+          key == 'jsl-platform/resource-quota' &&
+          object.metadata.labels[key] == 'enforced'
+        )
+      message: "命名空间必须声明资源配额（标签 jsl-platform/resource-quota=enforced），表明已配置 ResourceQuota"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true
