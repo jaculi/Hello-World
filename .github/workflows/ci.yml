@@ -1,12 +1,17 @@
-# BC 全门禁（步 25，BP-05 §7.1 预埋）：buf → lint（含 depguard 自定义规则）
-# → 单测 → 集成测（testcontainers，RLS 实证）→ 制品构建（签名步骤预留）。
-# e2e 标签测试需要完整 docker-compose 栈，当前在本地/dev 环境运行，暂不进本流水线。
+# BC 全门禁（步 25 + M6 预留收尾）：buf → lint（含 depguard 自定义规则）
+# → 单测 → 集成测（testcontainers，RLS 实证）→ 制品构建并推 GHCR（master）
+# → e2e（PG+Kafka 黑盒链路：开通→outbox→Kafka 信封 + 全链路冒烟）。
+# 镜像签名（cosign）仍为预留，随制品策略接入启用。
 name: ci
 
 on:
   push:
     branches: [master]
   pull_request:
+
+permissions:
+  contents: read
+  packages: write # GHCR 推送（ghcr.io/<owner>/tenant-bc）
 
 jobs:
   buf:
@@ -64,23 +69,40 @@ jobs:
       - run: go test -tags integration ./pkg/dataaccess -v -count=1
 
   image-build:
-    name: ⑤ 制品构建（distroless，签名预留）
+    name: ⑤ 制品构建并推送 GHCR（distroless）
     runs-on: ubuntu-latest
     needs: [lint, unit-test, integration-test]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: 构建 tenant-bc 镜像（不推送；签名/推送随制品库接入启用）
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 镜像标签元数据（master 推 sha-* + latest；PR 仅本地 load）
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/tenant-bc
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+      - name: 构建 tenant-bc 镜像
         uses: docker/build-push-action@v6
         with:
           context: .
           file: services/tenant/Dockerfile
-          tags: jsl/tenant-bc:${{ github.sha }}
-          push: false
-          load: true
-      - name: 制品冒烟（容器应能以非 root 启动并监听 8000/9000）
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+          load: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+      - name: 制品冒烟（容器以非 root 启动并响应 /healthz）
         run: |
-          docker run -d --name smoke -p 8000:8000 -e JSL_ENV=dev jsl/tenant-bc:${{ github.sha }}
+          IMG="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tenant-bc:sha-${GITHUB_SHA::7}"
+          docker image inspect "$IMG" >/dev/null 2>&1 || docker pull "$IMG"
+          docker run -d --name smoke -p 8000:8000 -e JSL_ENV=dev "$IMG"
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8000/healthz | grep -q SERVING; then
               echo "container smoke OK"; docker logs smoke; exit 0
@@ -88,3 +110,70 @@ jobs:
             sleep 2
           done
           echo "container smoke FAILED"; docker logs smoke; exit 1
+
+  e2e:
+    name: ⑥ 端到端（PG+Kafka 黑盒链路）
+    runs-on: ubuntu-latest
+    needs: [lint, unit-test, integration-test]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jsl
+          POSTGRES_PASSWORD: jsl
+          POSTGRES_DB: jsl
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U jsl -d jsl"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      kafka:
+        image: apache/kafka:3.9.1
+        env:
+          CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+          KAFKA_NODE_ID: "1"
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+          KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
+          --health-interval 5s --health-timeout 10s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.14"
+          cache: true
+      - name: 构建 tenant-bc
+        run: go build -o bin/tenant-bc ./services/tenant
+      - name: 启动服务（prod 装配：PG + Kafka，启动即自动迁移）
+        env:
+          JSL_ENV: prod
+          JSL_DB_DSN: postgres://jsl:jsl@localhost:5432/jsl?sslmode=disable
+          JSL_KAFKA_BROKERS: localhost:9092
+          JSL_KAFKA_TOPIC: platform.events.v1
+        run: |
+          ./bin/tenant-bc > /tmp/server.log 2>&1 &
+          echo $! > /tmp/server.pid
+      - name: 等待 /healthz
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/healthz && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/healthz || { echo '--- server log ---'; cat /tmp/server.log; exit 1; }
+      - name: e2e（开通→outbox→Kafka 信封校验 + 全链路冒烟）
+        run: go test -tags=e2e ./services/tenant/e2e -v -count=1
+      - name: 服务日志
+        if: always()
+        run: cat /tmp/server.log

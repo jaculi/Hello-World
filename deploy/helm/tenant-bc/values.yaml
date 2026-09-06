@@ -2,7 +2,7 @@
 replicaCount: 2
 
 image:
-  repository: jsl/tenant-bc
+  repository: ghcr.io/jaculi/tenant-bc  # CI 推 GHCR（master: sha-* + latest）
   tag: ""            # 缺省用 Chart appVersion，CI 制品链注入（BP-04 §6）
   pullPolicy: IfNotPresent
 
