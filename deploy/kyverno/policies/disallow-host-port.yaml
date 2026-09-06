@@ -1,0 +1,48 @@
+# 禁止 hostPort（M13 / BP-05 网络安全）
+#
+# 禁止容器使用 hostPort，防止端口冲突、节点端口暴露与绕过 NetworkPolicy。
+# 对外服务统一经 Service + Ingress/APISIX 网关暴露。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-host-port
+  annotations:
+    policies.kyverno.io/title: 禁止 hostPort
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.spec.containers.all(c,
+          (c.?ports.orValue([])).all(p, p.?hostPort.orValue(0) == 0)
+        )
+      message: "禁止使用 hostPort，对外服务须经 Service + Ingress/网关暴露"
+    - expression: >-
+        (object.spec.?initContainers.orValue([])).all(c,
+          (c.?ports.orValue([])).all(p, p.?hostPort.orValue(0) == 0)
+        )
+      message: "初始化容器禁止使用 hostPort"
+    - expression: >-
+        (object.spec.?ephemeralContainers.orValue([])).all(c,
+          (c.?ports.orValue([])).all(p, p.?hostPort.orValue(0) == 0)
+        )
+      message: "临时容器禁止使用 hostPort"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true

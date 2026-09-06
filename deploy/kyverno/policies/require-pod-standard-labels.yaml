@@ -1,0 +1,40 @@
+# Pod 标准标签强制（M13 / BP-04 可观测性 + 制品追溯）
+#
+# 强制 platform 命名空间的 Pod 携带 Kubernetes 推荐标签，
+# 用于服务发现、监控、日志关联与制品追溯。
+# 必需标签：app.kubernetes.io/name, app.kubernetes.io/version
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-pod-standard-labels
+  annotations:
+    policies.kyverno.io/title: Pod 标准标签强制
+    policies.kyverno.io/category: Governance
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.metadata.?labels.orValue({}).exists(key, key == 'app.kubernetes.io/name')
+      message: "Pod 必须有 app.kubernetes.io/name 标签"
+    - expression: >-
+        object.metadata.?labels.orValue({}).exists(key, key == 'app.kubernetes.io/version')
+      message: "Pod 必须有 app.kubernetes.io/version 标签（制品版本追溯）"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true

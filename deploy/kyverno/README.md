@@ -1,11 +1,11 @@
-# deploy/kyverno/ —— 准入控制（M12 生产基线·八层纵深防御）
+# deploy/kyverno/ —— 准入控制（M13 生产基线·十一层纵深防御）
 
-> 依据：[BP-05 §7.1.2 供应链安全](../blueprint/05-security-architecture.md)（包签名验证、镜像扫描、SBOM）、BP-05 默认拒绝 + 纵深防御原则、BP-04 资源治理
+> 依据：[BP-05 §7.1.2 供应链安全](../blueprint/05-security-architecture.md)（包签名验证、镜像扫描、SBOM）、BP-05 默认拒绝 + 纵深防御原则、BP-04 资源治理与制品可追溯
 > 这是 CI 侧 cosign keyless 签名（`.github/workflows/ci.yml` ⑤ 制品 job）的**运行时消费端**。
 
 ## 作用
 
-八层准入（纵深防御，均为 Deny + fail-closed），全部使用 **CEL 策略**（`policies.kyverno.io/v1`）：
+十一层准入（纵深防御，均为 Deny + fail-closed），全部使用 **CEL 策略**（`policies.kyverno.io/v1`）：
 
 ### Pod 级（platform 命名空间）
 
@@ -14,12 +14,15 @@
 3. **Pod 安全标准 restricted**（`require-pod-security-restricted`，`ValidatingPolicy`）：强制 privileged=false、allowPrivilegeEscalation=false、runAsNonRoot=true、readOnlyRootFilesystem=true、capabilities.drop=[ALL]、seccompProfile=RuntimeDefault、禁止 hostNetwork/hostPID/hostIPC/hostPath。防容器逃逸与权限提升。
 4. **资源限制强制**（`require-resource-limits`，`ValidatingPolicy`）：全部容器必须声明 CPU/内存的 requests 与 limits，防止资源耗尽与调度失衡。
 5. **禁止 SA token 自动挂载**（`disable-automount-sa-token`，`ValidatingPolicy`）：Pod 必须显式 `automountServiceAccountToken=false`，且禁止 projected 卷挂载 serviceAccountToken，减少凭证泄露面。
+6. **禁止 latest 标签**（`disallow-latest-tag`，`ValidatingPolicy`）：镜像禁止使用 `:latest` 标签，必须 pin 到具体版本或 digest（BP-04 §6 制品可追溯）。已签 `:latest` 镜像经签名策略 `mutateDigest` 转为 digest 后通过。
+7. **Pod 标准标签**（`require-pod-standard-labels`，`ValidatingPolicy`）：Pod 必须有 `app.kubernetes.io/name` 与 `app.kubernetes.io/version` 标签，用于可观测性与制品追溯。
+8. **禁止 hostPort**（`disallow-host-port`，`ValidatingPolicy`）：禁止容器使用 hostPort，对外服务统一经 Service + Ingress/APISIX 网关暴露，防端口冲突与节点端口暴露。
 
 ### Namespace 级（全集群）
 
-6. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
-7. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
-8. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
+9. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
+10. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
+11. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
 
 **策略例外**：默认拒绝，确需豁免时经安全评审后创建 `PolicyException`（仅允许在 kyverno 命名空间创建，由平台管理员统一管理），须设 `expiresAt` 到期自动失效。
 
@@ -37,6 +40,9 @@ deploy/kyverno/
 │   ├── require-pod-security-restricted.yaml  # ValidatingPolicy：PSS restricted
 │   ├── require-resource-limits.yaml          # ValidatingPolicy：资源 requests/limits 强制
 │   ├── disable-automount-sa-token.yaml       # ValidatingPolicy：禁止 SA token 自动挂载
+│   ├── disallow-latest-tag.yaml              # ValidatingPolicy：禁止 :latest 镜像标签
+│   ├── require-pod-standard-labels.yaml      # ValidatingPolicy：Pod 标准标签
+│   ├── disallow-host-port.yaml               # ValidatingPolicy：禁止 hostPort
 │   ├── require-namespace-network-isolation.yaml  # ValidatingPolicy：命名空间网络隔离声明
 │   ├── require-namespace-quota.yaml          # ValidatingPolicy：命名空间资源配额声明
 │   └── require-namespace-labels.yaml         # ValidatingPolicy：命名空间必需标签

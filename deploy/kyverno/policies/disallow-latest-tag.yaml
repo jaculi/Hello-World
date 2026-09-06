@@ -1,0 +1,42 @@
+# 禁止 latest 镜像标签（M13 / BP-04 §6 制品可追溯）
+#
+# 生产环境禁止使用 :latest 或无标签镜像，必须 pin 到 digest（由签名校验策略 mutateDigest 自动完成）
+# 或具体版本标签（如 sha-<commit>、v1.2.3），确保制品可追溯、可回滚。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/title: 禁止 latest 镜像标签
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 15
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.spec.containers.all(c, !c.image.endsWith(':latest'))
+      message: "禁止使用 :latest 镜像标签，必须 pin 到具体版本或 digest（BP-04 §6 制品可追溯）"
+    - expression: >-
+        (object.spec.?initContainers.orValue([])).all(c, !c.image.endsWith(':latest'))
+      message: "初始化容器禁止使用 :latest 镜像标签"
+    - expression: >-
+        (object.spec.?ephemeralContainers.orValue([])).all(c, !c.image.endsWith(':latest'))
+      message: "临时容器禁止使用 :latest 镜像标签"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true
