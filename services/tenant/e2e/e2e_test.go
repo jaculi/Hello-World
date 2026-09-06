@@ -15,6 +15,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -189,4 +190,122 @@ func keys(m map[string]*eventsv1.EventEnvelope) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TestSmokeFullFlow 步 22 全链路冒烟：开通 → 查询 → 越租户 404 → 根站点已初始化。
+func TestSmokeFullFlow(t *testing.T) {
+	base := envOr("JSL_E2E_HTTP", "http://127.0.0.1:8000")
+	secret := envOr("JSL_E2E_JWT_SECRET", "dev-secret-change-me")
+
+	platformTok, err := authz.SignStub([]byte(secret),
+		authz.Claims{Subject: "smoke:tester", TenantID: "platform", Roles: []string{"platform.admin"}},
+		time.Now().Add(10*time.Minute))
+	if err != nil {
+		t.Fatalf("sign platform token: %v", err)
+	}
+
+	// 1. 开通租户
+	tenantName := strings.ToLower("smoke-" + ulid.Make().String())
+	tenantID := createTenant(t, base, platformTok, tenantName)
+	t.Logf("tenant created: id=%s", tenantID)
+
+	// 2. 同租户令牌查询租户
+	tenantTok, err := authz.SignStub([]byte(secret),
+		authz.Claims{Subject: "smoke:user", TenantID: tenantID, Roles: []string{"admin"}},
+		time.Now().Add(10*time.Minute))
+	if err != nil {
+		t.Fatalf("sign tenant token: %v", err)
+	}
+	got := getTenant(t, base, tenantTok, tenantID)
+	if got["name"] != tenantName {
+		t.Fatalf("get tenant name = %v, want %s", got["name"], tenantName)
+	}
+	if got["status"] != float64(1) { // TENANT_STATUS_ACTIVE = 1
+		t.Fatalf("tenant status = %v, want ACTIVE(1)", got["status"])
+	}
+
+	// 3. 越租户查询：404（RLS + guardCrossTenant）
+	otherTok, err := authz.SignStub([]byte(secret),
+		authz.Claims{Subject: "smoke:intruder", TenantID: "other-tenant"},
+		time.Now().Add(10*time.Minute))
+	if err != nil {
+		t.Fatalf("sign other token: %v", err)
+	}
+	status, _ := httpGet(t, base, "/v1/tenants/"+tenantID, otherTok)
+	if status != http.StatusNotFound {
+		t.Fatalf("cross-tenant get: expected 404, got %d", status)
+	}
+
+	// 4. 站点列表：开通时已初始化根站点
+	status, body := httpGet(t, base, "/v1/sites", tenantTok)
+	if status != http.StatusOK {
+		t.Fatalf("list sites: HTTP %d: %s", status, body)
+	}
+	var sites struct {
+		Sites []map[string]any `json:"sites"`
+	}
+	if err := json.Unmarshal(body, &sites); err != nil {
+		t.Fatalf("decode sites: %v", err)
+	}
+	if len(sites.Sites) == 0 {
+		t.Fatal("expected root site initialized at provisioning, got empty list")
+	}
+	root := sites.Sites[0]
+	if root["name"] != "root" {
+		t.Fatalf("root site name = %v, want root", root["name"])
+	}
+	siteID := root["site_id"]
+	if siteID == nil {
+		siteID = root["siteId"]
+	}
+	t.Logf("smoke OK: provision → get → cross-tenant 404 → root site initialized (%v)", siteID)
+}
+
+// getTenant 经 HTTP 查询租户，返回顶层字段 map。
+func getTenant(t *testing.T, base, token, tenantID string) map[string]any {
+	t.Helper()
+	status, body := httpGet(t, base, "/v1/tenants/"+tenantID, token)
+	if status != http.StatusOK {
+		t.Fatalf("get tenant %s: HTTP %d: %s", tenantID, status, body)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode tenant: %v", err)
+	}
+	return out
+}
+
+// httpGet 发起 GET 请求并返回状态码与响应体。
+func httpGet(t *testing.T, base, path, token string) (int, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, base+path, nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("x-tenant-id", tokenTenantID(token))
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("http get %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, body
+}
+
+// tokenTenantID 从令牌中提取租户 ID（仅用于设置 x-tenant-id 头，验签由服务端完成）。
+func tokenTenantID(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var c struct {
+		TenantID string `json:"tenant_id"`
+	}
+	_ = json.Unmarshal(raw, &c)
+	return c.TenantID
 }
