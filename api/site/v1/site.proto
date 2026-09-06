@@ -1,0 +1,89 @@
+// BC-P1 站点契约。站点树（BP-01 §2.2 Site 为行业中性的核心空间概念）；
+// 移动站点时禁止形成环（MoveSite 循环依赖拒绝是领域规则测试点）。
+syntax = "proto3";
+
+package jsl.platform.site.v1;
+
+option go_package = "github.com/jsl-aiot/platform/api/site/v1;sitev1";
+
+import "common/v1/common.proto";
+import "google/api/annotations.proto";
+
+// Site 站点聚合：厂区 / 单体楼 / 农场 / 院区 / 防护点位群的统一抽象。
+message Site {
+  string site_id = 1;
+  string tenant_id = 2;
+  // 父站点，为空表示租户根站点。
+  string parent_site_id = 3;
+  // 租户内唯一。
+  string name = 4;
+  string display_name = 5;
+  // 行业语义类型（如 factory/building/farm/campus/guard_point），由行业模块扩展。
+  string site_type = 6;
+  common.v1.AuditFields audit = 7;
+}
+
+message CreateSiteRequest {
+  string parent_site_id = 1;
+  string name = 2;
+  string display_name = 3;
+  string site_type = 4;
+}
+
+message GetSiteRequest {
+  string site_id = 1;
+}
+
+message ListSitesRequest {
+  common.v1.PageRequest page = 1;
+}
+
+message ListSitesResponse {
+  repeated Site sites = 1;
+  common.v1.PageResponse page = 2;
+}
+
+message UpdateSiteRequest {
+  string site_id = 1;
+  string display_name = 2;
+  string site_type = 3;
+  int64 version = 4;
+}
+
+message MoveSiteRequest {
+  string site_id = 1;
+  // 新父站点；为空表示移动到租户根。
+  string new_parent_site_id = 2;
+}
+
+service SiteService {
+  rpc CreateSite(CreateSiteRequest) returns (Site) {
+    option (google.api.http) = {
+      post: "/v1/sites"
+      body: "*"
+    };
+  }
+  rpc GetSite(GetSiteRequest) returns (Site) {
+    option (google.api.http) = {
+      get: "/v1/sites/{site_id}"
+    };
+  }
+  rpc ListSites(ListSitesRequest) returns (ListSitesResponse) {
+    option (google.api.http) = {
+      get: "/v1/sites"
+    };
+  }
+  rpc UpdateSite(UpdateSiteRequest) returns (Site) {
+    option (google.api.http) = {
+      patch: "/v1/sites/{site_id}"
+      body: "*"
+    };
+  }
+  // MoveSite 移动站点子树；目标父站点不得是自身或自身后代（循环依赖拒绝）。
+  rpc MoveSite(MoveSiteRequest) returns (Site) {
+    option (google.api.http) = {
+      post: "/v1/sites/{site_id}:move"
+      body: "*"
+    };
+  }
+}

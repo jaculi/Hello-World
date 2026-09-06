@@ -1,0 +1,142 @@
+// BC-P1 租户契约。状态机（BP-01 §4.2）：
+// 创建即 ACTIVE（Provision 语义）；ACTIVE→SUSPENDED；SUSPENDED→ACTIVE；
+// 注销仅可自 SUSPENDED 进入，进入 DEACTIVATED 后终态。
+syntax = "proto3";
+
+package jsl.platform.tenant.v1;
+
+option go_package = "github.com/jsl-aiot/platform/api/tenant/v1;tenantv1";
+
+import "common/v1/common.proto";
+import "google/api/annotations.proto";
+
+// TenantStatus 租户生命周期状态。
+enum TenantStatus {
+  TENANT_STATUS_UNSPECIFIED = 0;
+  TENANT_STATUS_ACTIVE = 1;
+  TENANT_STATUS_SUSPENDED = 2;
+  TENANT_STATUS_DEACTIVATED = 3;
+}
+
+// IsolationLevel 租户隔离级别（BP-03 §3.1）。
+enum IsolationLevel {
+  ISOLATION_LEVEL_UNSPECIFIED = 0;
+  // 独立数据库。
+  ISOLATION_LEVEL_T1_DEDICATED = 1;
+  // 独立 Schema。
+  ISOLATION_LEVEL_T2_SCHEMA = 2;
+  // 行级隔离（RLS）。
+  ISOLATION_LEVEL_T3_ROW = 3;
+}
+
+// Tenant 租户聚合。
+message Tenant {
+  string tenant_id = 1;
+  // 全局唯一外部标识（小写字母数字与连字符）。
+  string name = 2;
+  string display_name = 3;
+  TenantStatus status = 4;
+  IsolationLevel isolation = 5;
+  string plan_id = 6;
+  // 数据驻留区域（ADR-0009）。
+  string home_region = 7;
+  common.v1.AuditFields audit = 8;
+}
+
+message CreateTenantRequest {
+  string name = 1;
+  string display_name = 2;
+  IsolationLevel isolation = 3;
+  string plan_id = 4;
+  string home_region = 5;
+}
+
+message GetTenantRequest {
+  string tenant_id = 1;
+}
+
+message SuspendTenantRequest {
+  string tenant_id = 1;
+  string reason = 2;
+}
+
+message ReactivateTenantRequest {
+  string tenant_id = 1;
+}
+
+message DeactivateTenantRequest {
+  string tenant_id = 1;
+  string reason = 2;
+}
+
+message BindIndustryAssemblyRequest {
+  string tenant_id = 1;
+  // 行业模块 ID，如 "industry.building"。
+  string module_id = 2;
+  // 模块版本（semver）。
+  string module_version = 3;
+  bool enabled = 4;
+}
+
+// IndustryAssembly 行业模块装配记录。
+message IndustryAssembly {
+  string module_id = 1;
+  string module_version = 2;
+  bool enabled = 3;
+  common.v1.AuditFields audit = 4;
+}
+
+message ListIndustryAssembliesRequest {
+  string tenant_id = 1;
+}
+
+message ListIndustryAssembliesResponse {
+  repeated IndustryAssembly assemblies = 1;
+}
+
+service TenantService {
+  // CreateTenant 开通租户（同事务完成：租户 + 默认套餐订阅 + 装配记录初始化）。
+  rpc CreateTenant(CreateTenantRequest) returns (Tenant) {
+    option (google.api.http) = {
+      post: "/v1/tenants"
+      body: "*"
+    };
+  }
+  rpc GetTenant(GetTenantRequest) returns (Tenant) {
+    option (google.api.http) = {
+      get: "/v1/tenants/{tenant_id}"
+    };
+  }
+  // SuspendTenant 冻结租户（ACTIVE→SUSPENDED），产生写冻结。
+  rpc SuspendTenant(SuspendTenantRequest) returns (Tenant) {
+    option (google.api.http) = {
+      post: "/v1/tenants/{tenant_id}:suspend"
+      body: "*"
+    };
+  }
+  rpc ReactivateTenant(ReactivateTenantRequest) returns (Tenant) {
+    option (google.api.http) = {
+      post: "/v1/tenants/{tenant_id}:reactivate"
+      body: "*"
+    };
+  }
+  // DeactivateTenant 注销租户（仅 SUSPENDED 可进入；保留期内可人工恢复）。
+  rpc DeactivateTenant(DeactivateTenantRequest) returns (Tenant) {
+    option (google.api.http) = {
+      post: "/v1/tenants/{tenant_id}:deactivate"
+      body: "*"
+    };
+  }
+  // BindIndustryAssembly 绑定行业模块装配（M4 追加）。
+  rpc BindIndustryAssembly(BindIndustryAssemblyRequest) returns (IndustryAssembly) {
+    option (google.api.http) = {
+      post: "/v1/tenants/{tenant_id}/assemblies"
+      body: "*"
+    };
+  }
+  rpc ListIndustryAssemblies(ListIndustryAssembliesRequest) returns (ListIndustryAssembliesResponse) {
+    option (google.api.http) = {
+      get: "/v1/tenants/{tenant_id}/assemblies"
+    };
+  }
+}

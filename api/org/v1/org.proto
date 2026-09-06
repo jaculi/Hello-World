@@ -1,0 +1,72 @@
+// BC-P1 组织契约。组织树挂在租户之下，根组织由租户开通时初始化；
+// 新组织必须挂在租户根（parent 为空）或既有组织之下。
+syntax = "proto3";
+
+package jsl.platform.org.v1;
+
+option go_package = "github.com/jsl-aiot/platform/api/org/v1;orgv1";
+
+import "common/v1/common.proto";
+import "google/api/annotations.proto";
+
+// Organization 组织聚合。
+message Organization {
+  string org_id = 1;
+  string tenant_id = 2;
+  // 父组织，为空表示挂在租户根。
+  string parent_org_id = 3;
+  // 组织内唯一。
+  string name = 4;
+  string display_name = 5;
+  common.v1.AuditFields audit = 6;
+}
+
+message CreateOrgRequest {
+  string parent_org_id = 1;
+  string name = 2;
+  string display_name = 3;
+}
+
+message GetOrgRequest {
+  string org_id = 1;
+}
+
+message ListOrgsRequest {
+  common.v1.PageRequest page = 1;
+}
+
+message ListOrgsResponse {
+  repeated Organization orgs = 1;
+  common.v1.PageResponse page = 2;
+}
+
+message UpdateOrgRequest {
+  string org_id = 1;
+  string display_name = 2;
+  int64 version = 3;
+}
+
+service OrgService {
+  rpc CreateOrg(CreateOrgRequest) returns (Organization) {
+    option (google.api.http) = {
+      post: "/v1/orgs"
+      body: "*"
+    };
+  }
+  rpc GetOrg(GetOrgRequest) returns (Organization) {
+    option (google.api.http) = {
+      get: "/v1/orgs/{org_id}"
+    };
+  }
+  rpc ListOrgs(ListOrgsRequest) returns (ListOrgsResponse) {
+    option (google.api.http) = {
+      get: "/v1/orgs"
+    };
+  }
+  rpc UpdateOrg(UpdateOrgRequest) returns (Organization) {
+    option (google.api.http) = {
+      patch: "/v1/orgs/{org_id}"
+      body: "*"
+    };
+  }
+}

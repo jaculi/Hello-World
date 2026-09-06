@@ -1,9 +1,17 @@
-version: v2
-modules:
-  - path: .
+version: v1
+name: buf.build/jsl-aiot/platform
+deps:
+  - buf.build/googleapis/googleapis
 lint:
   use:
     - STANDARD
+  except:
+    - PACKAGE_VERSION_SUFFIX
+    # 目录采用短名（common/v1、tenant/v1），与包名前缀解耦
+    - PACKAGE_DIRECTORY_MATCH
+    # 实体消息（Tenant/Site/Organization）复用为多个 RPC 的响应类型
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    - RPC_RESPONSE_STANDARD_NAME
 breaking:
   use:
     - FILE

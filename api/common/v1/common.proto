@@ -1,0 +1,45 @@
+// 公共契约：错误负载、审计字段、分页信封。
+// 规则（BP-03 §4.2）：协议层只携带消息码（兼 i18n 键），永不携带已渲染的人类文本。
+syntax = "proto3";
+
+package jsl.platform.common.v1;
+
+option go_package = "github.com/jsl-aiot/platform/api/common/v1;commonv1";
+
+import "google/protobuf/timestamp.proto";
+
+// PlatformError 平台统一错误负载。
+message PlatformError {
+  // 平台错误码（稳定、机器可读）。
+  int32 code = 1;
+  // 消息码，兼作 i18n 键，如 "platform.tenant.suspended"。
+  string message_code = 2;
+  // 消息插值参数。
+  map<string, string> params = 3;
+}
+
+// AuditFields 公共审计字段（BP-03 §4.1），所有实体响应内嵌。
+message AuditFields {
+  string created_by = 1;
+  google.protobuf.Timestamp created_at = 2;
+  string updated_by = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  // 乐观锁版本号。
+  int64 version = 5;
+}
+
+// PageRequest 分页请求信封（游标分页）。
+message PageRequest {
+  // 页大小，范围 [1, 200]。
+  int32 page_size = 1;
+  // 游标，首页为空。
+  string page_token = 2;
+}
+
+// PageResponse 分页响应信封。
+message PageResponse {
+  // 下一页游标，为空表示没有更多数据。
+  string next_page_token = 1;
+  // 总数估算值（大表为估算，不做精确 COUNT）。
+  int64 total_estimate = 2;
+}

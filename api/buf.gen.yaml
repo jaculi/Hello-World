@@ -1,11 +1,11 @@
-# 契约代码生成配置（ADR-0005：api-contracts 单仓 + CI 兼容门禁）
-# 事件与开放 API 的 .proto 全部存放于 api/，Go 代码生成到 api/gen/
-# 注意：kratos HTTP 双生成插件（protoc-gen-go-http v3 路径）在步 11 首个 API proto 落地时接入
-version: v2
+version: v1
 plugins:
-  - local: protoc-gen-go
-    out: gen/go
+  - plugin: go
+    out: .
     opt: paths=source_relative
-  - local: protoc-gen-go-grpc
-    out: gen/go
+  - plugin: go-grpc
+    out: .
+    opt: paths=source_relative,require_unimplemented_servers=false
+  - plugin: go-http
+    out: .
     opt: paths=source_relative

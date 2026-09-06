@@ -1,0 +1,84 @@
+// 平台统一事件信封与载荷（ADR-0005）。
+// 决策：payload 直接嵌入 oneof（编译期类型安全 + buf breaking 覆盖载荷字段），
+// 不采用 Any 包装。新增事件 = 追加 oneof 成员（向后兼容）；
+// 禁止修改既有字段的编号与类型。
+syntax = "proto3";
+
+package jsl.platform.events.v1;
+
+option go_package = "github.com/jsl-aiot/platform/api/events/v1;eventsv1";
+
+import "google/protobuf/timestamp.proto";
+
+// EventEnvelope 平台统一事件信封。
+message EventEnvelope {
+  // 事件唯一标识（ULID，时间有序）。
+  string event_id = 1;
+  // 事件类型名，如 "platform.tenant.provisioned"（与 oneof 成员一一对应）。
+  string event_type = 2;
+  // 载荷 schema 版本（信封本身不变式；载荷演进走 buf breaking 门禁）。
+  string schema_version = 3;
+  // 归属链（BP-03 §4.1）：tenant → org → site。
+  string tenant_id = 4;
+  string org_id = 5;
+  string site_id = 6;
+  // 事件发生时间（领域时间，非投递时间）。
+  google.protobuf.Timestamp occurred_at = 7;
+  // W3C Trace ID（跨域链路追踪）。
+  string trace_id = 8;
+  // 事件来源 BC 标识，如 "bc-p1"。
+  string source = 9;
+
+  oneof events {
+    TenantProvisioned tenant_provisioned = 20;
+    TenantSuspended tenant_suspended = 21;
+    TenantReactivated tenant_reactivated = 22;
+    TenantDeactivated tenant_deactivated = 23;
+    SiteCreated site_created = 24;
+    IndustryAssemblyBound industry_assembly_bound = 25;
+  }
+}
+
+// TenantProvisioned 租户开通完成（含装配记录、根组织、根站点初始化）。
+message TenantProvisioned {
+  string tenant_id = 1;
+  string name = 2;
+  string plan_id = 3;
+  string isolation_level = 4;
+  // 随开通装配的行业模块 ID 列表。
+  repeated string industry_modules = 5;
+  string root_org_id = 6;
+  string root_site_id = 7;
+}
+
+// TenantSuspended 租户被冻结（写冻结）。
+message TenantSuspended {
+  string tenant_id = 1;
+  string reason = 2;
+}
+
+// TenantReactivated 租户从冻结恢复。
+message TenantReactivated {
+  string tenant_id = 1;
+}
+
+// TenantDeactivated 租户注销（仅可自 Suspended 进入；保留期后物理清理）。
+message TenantDeactivated {
+  string tenant_id = 1;
+  string reason = 2;
+}
+
+// SiteCreated 站点创建（含根站点初始化）。
+message SiteCreated {
+  string site_id = 1;
+  string tenant_id = 2;
+  string parent_site_id = 3;
+  string name = 4;
+}
+
+// IndustryAssemblyBound 行业模块装配绑定。
+message IndustryAssemblyBound {
+  string tenant_id = 1;
+  string module_id = 2;
+  string module_version = 3;
+}
