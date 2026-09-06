@@ -1,11 +1,11 @@
-# deploy/kyverno/ —— 准入控制（M13 生产基线·十一层纵深防御）
+# deploy/kyverno/ —— 准入控制（M14 生产基线·十四层纵深防御）
 
 > 依据：[BP-05 §7.1.2 供应链安全](../blueprint/05-security-architecture.md)（包签名验证、镜像扫描、SBOM）、BP-05 默认拒绝 + 纵深防御原则、BP-04 资源治理与制品可追溯
 > 这是 CI 侧 cosign keyless 签名（`.github/workflows/ci.yml` ⑤ 制品 job）的**运行时消费端**。
 
 ## 作用
 
-十一层准入（纵深防御，均为 Deny + fail-closed），全部使用 **CEL 策略**（`policies.kyverno.io/v1`）：
+十四层准入（纵深防御，均为 Deny + fail-closed），全部使用 **CEL 策略**（`policies.kyverno.io/v1`）：
 
 ### Pod 级（platform 命名空间）
 
@@ -17,16 +17,20 @@
 6. **禁止 latest 标签**（`disallow-latest-tag`，`ValidatingPolicy`）：镜像禁止使用 `:latest` 标签，必须 pin 到具体版本或 digest（BP-04 §6 制品可追溯）。已签 `:latest` 镜像经签名策略 `mutateDigest` 转为 digest 后通过。
 7. **Pod 标准标签**（`require-pod-standard-labels`，`ValidatingPolicy`）：Pod 必须有 `app.kubernetes.io/name` 与 `app.kubernetes.io/version` 标签，用于可观测性与制品追溯。
 8. **禁止 hostPort**（`disallow-host-port`，`ValidatingPolicy`）：禁止容器使用 hostPort，对外服务统一经 Service + Ingress/APISIX 网关暴露，防端口冲突与节点端口暴露。
+9. **禁止 root 用户**（`disallow-run-as-root`，`ValidatingPolicy`）：容器 `runAsUser` 不能为 0，作为 PSS `runAsNonRoot` 的纵深防御补充。
+10. **禁止未屏蔽 procMount**（`require-default-proc-mount`，`ValidatingPolicy`）：容器 `procMount` 必须为 `Default`，禁止 `Unmasked` 暴露宿主机 /proc。
+11. **禁止 hostAlias**（`disallow-host-aliases`，`ValidatingPolicy`）：禁止 Pod 设置 `spec.hostAliases`，防止 DNS 劫持与绕过集群服务发现。
 
 ### Namespace 级（全集群）
 
-9. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
-10. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
-11. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
+12. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
+13. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
+14. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
 
 **策略例外**：默认拒绝，确需豁免时经安全评审后创建 `PolicyException`（仅允许在 kyverno 命名空间创建，由平台管理员统一管理），须设 `expiresAt` 到期自动失效。
 
-> 注：CEL ValidatingPolicy 无法跨资源查询（不能在 namespace 创建时检查其下的 NetworkPolicy/ResourceQuota），因此网络隔离与资源配额采用「标签声明 + GitOps 流程约束」模式，实际 NetworkPolicy/ResourceQuota 由平台基线保障。
+> 注 1：CEL ValidatingPolicy 无法跨资源查询（不能在 namespace 创建时检查其下的 NetworkPolicy/ResourceQuota），因此网络隔离与资源配额采用「标签声明 + GitOps 流程约束」模式，实际 NetworkPolicy/ResourceQuota 由平台基线保障。
+> 注 2：`procMount: Unmasked` 需 Kubernetes `ProcMountType` 特性门控启用，未启用时 API Server 自动转为 `Default`，故该策略在未启用特性门控的集群中无法实证违规，但策略逻辑正确，启用后即时生效。
 
 ## 目录结构
 
@@ -43,6 +47,9 @@ deploy/kyverno/
 │   ├── disallow-latest-tag.yaml              # ValidatingPolicy：禁止 :latest 镜像标签
 │   ├── require-pod-standard-labels.yaml      # ValidatingPolicy：Pod 标准标签
 │   ├── disallow-host-port.yaml               # ValidatingPolicy：禁止 hostPort
+│   ├── disallow-run-as-root.yaml             # ValidatingPolicy：禁止 root 用户运行
+│   ├── require-default-proc-mount.yaml       # ValidatingPolicy：禁止未屏蔽 procMount
+│   ├── disallow-host-aliases.yaml            # ValidatingPolicy：禁止 hostAlias
 │   ├── require-namespace-network-isolation.yaml  # ValidatingPolicy：命名空间网络隔离声明
 │   ├── require-namespace-quota.yaml          # ValidatingPolicy：命名空间资源配额声明
 │   └── require-namespace-labels.yaml         # ValidatingPolicy：命名空间必需标签

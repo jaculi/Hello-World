@@ -86,7 +86,7 @@ matchImageReferences:
     - expression: "object.spec.containers.map(c, c.image)"
   ```
 
-## 策略矩阵（十一层纵深防御）
+## 策略矩阵（十四层纵深防御）
 
 | 层 | 策略 | 类型 | 范围 | 作用 |
 |---|---|---|---|---|
@@ -98,9 +98,12 @@ matchImageReferences:
 | 6 | disallow-latest-tag | ValidatingPolicy | platform ns | 禁止 :latest 镜像标签 |
 | 7 | require-pod-standard-labels | ValidatingPolicy | platform ns | Pod 标准标签（name/version） |
 | 8 | disallow-host-port | ValidatingPolicy | platform ns | 禁止 hostPort |
-| 9 | require-namespace-network-isolation | ValidatingPolicy | 全集群 ns | 网络隔离声明标签 |
-| 10 | require-namespace-quota | ValidatingPolicy | 全集群 ns | 资源配额声明标签 |
-| 11 | require-namespace-labels | ValidatingPolicy | 全集群 ns | team/environment/cost-center |
+| 9 | disallow-run-as-root | ValidatingPolicy | platform ns | 禁止 runAsUser=0 |
+| 10 | require-default-proc-mount | ValidatingPolicy | platform ns | 禁止 procMount=Unmasked |
+| 11 | disallow-host-aliases | ValidatingPolicy | platform ns | 禁止 hostAliases |
+| 12 | require-namespace-network-isolation | ValidatingPolicy | 全集群 ns | 网络隔离声明标签 |
+| 13 | require-namespace-quota | ValidatingPolicy | 全集群 ns | 资源配额声明标签 |
+| 14 | require-namespace-labels | ValidatingPolicy | 全集群 ns | team/environment/cost-center |
 
 ## 策略例外机制（PolicyException）
 

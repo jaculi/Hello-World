@@ -1,0 +1,49 @@
+# 禁止未屏蔽 procMount（M14 / BP-05 纵深防御）
+#
+# 强制容器的 procMount 为 Default，禁止 Unmasked。
+# Unmasked procMount 会暴露宿主机 /proc 敏感信息（如内核参数、进程信息），
+# 可能被容器逃逸利用。PSS restricted 未明确覆盖此字段，本策略补充。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-default-proc-mount
+  annotations:
+    policies.kyverno.io/title: 禁止未屏蔽 procMount
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.spec.containers.all(c,
+          c.?securityContext.?procMount.orValue('Default') == 'Default'
+        )
+      message: "容器 procMount 必须为 Default，禁止 Unmasked（防止暴露宿主机 /proc）"
+    - expression: >-
+        (object.spec.?initContainers.orValue([])).all(c,
+          c.?securityContext.?procMount.orValue('Default') == 'Default'
+        )
+      message: "初始化容器 procMount 必须为 Default"
+    - expression: >-
+        (object.spec.?ephemeralContainers.orValue([])).all(c,
+          c.?securityContext.?procMount.orValue('Default') == 'Default'
+        )
+      message: "临时容器 procMount 必须为 Default"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true
