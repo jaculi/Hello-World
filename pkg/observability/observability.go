@@ -19,7 +19,6 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
-	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/jsl-aiot/platform/pkg/tenantcontext"
 )
@@ -38,7 +37,10 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 		propagation.TraceContext{}, propagation.Baggage{},
 	))
 	if cfg.OTLPEndpoint == "" {
-		otel.SetTracerProvider(noop.NewTracerProvider())
+		// dev 零依赖模式：不导出 span，但以真实 tracer 生成 trace ID ——
+		// noop provider 产生不了 trace ID，会破坏事件信封与日志的链路不变式
+		// （BP-03 §4.1 trace_id 必填 / BP-05 §6.3），M4 e2e 实证修正。
+		otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSyncer(devDropExporter{})))
 		return func(context.Context) error { return nil }, nil
 	}
 
@@ -81,6 +83,12 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 		return mp.Shutdown(ctx)
 	}, nil
 }
+
+// devDropExporter 丢弃全部 span 的空导出器（dev 模式保留真实 trace ID 用）。
+type devDropExporter struct{}
+
+func (devDropExporter) ExportSpans(context.Context, []sdktrace.ReadOnlySpan) error { return nil }
+func (devDropExporter) Shutdown(context.Context) error                             { return nil }
 
 var baseLogger *slog.Logger
 

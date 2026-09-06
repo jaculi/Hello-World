@@ -1,4 +1,4 @@
-﻿# 执行计划：BC-P1 租户与站点骨架模板
+# 执行计划：BC-P1 租户与站点骨架模板
 
 > 状态：**待执行**（2026-09-05 制定）
 > 上游依据：[ADR-0004 go-kratos v3](../adr/0004-go-service-framework.md)（回归验证点）、[ADR-0005 事件总线与 Schema](../adr/0005-event-bus-and-schema-management.md)、[BP-02 §3.1 BC-P1](../blueprint/02-application-architecture.md)、[BP-03 §3/§4](../blueprint/03-data-architecture.md)、[BP-04 §3/§4/§6](../blueprint/04-technology-architecture.md)、[BP-05 §3/§4/§9](../blueprint/05-security-architecture.md)
@@ -74,8 +74,8 @@ M0 工程基建（步 1-3）→ M1 壳层组件（步 4-9）→ M2 契约（步 
 
 | # | 状态 | 步骤 | 内容要点 | 验收 |
 |---|---|---|---|---|
-| 18 | ◐ | 事务性发件箱 | 业务事务同事务写 `outbox` 表 → relay 投递 Kafka（dev 用 docker-compose；relay 接口抽象支持测试替身）。表结构与 Outbox 写入口已完成（M4），relay 与 Kafka 接入待做 | 防双写不一致 |
-| 19 | ☐ | `tenant.provisioned` 发布链路 | 端到端：开通 → outbox → Kafka（信封字段完整）；消费方契约测试预留 | 事件可到达 |
+| 18 | ✅ | 事务性发件箱 | 业务事务同事务写 `outbox` 表 → relay 投递 Kafka（dev 用 docker-compose；relay 接口抽象支持测试替身）。表结构与 Outbox 写入口已完成（M4），relay 与 Kafka 接入待做 | 防双写不一致 |
+| 19 | ✅ | `tenant.provisioned` 发布链路 | 端到端：开通 → outbox → Kafka（信封字段完整）；消费方契约测试预留 | 事件可到达 |
 
 ### 阶段 5：测试与 ADR-0004 回归验证
 
@@ -112,3 +112,4 @@ M0 工程基建（步 1-3）→ M1 壳层组件（步 4-9）→ M2 契约（步 
 |---|---|---|
 | 2026-09-05 | M0（步 1-3） | ✅ 完成。模块策略：单根 go.mod（`github.com/jsl-aiot/platform`），模板 `templates/bc-skeleton` 与服务同模块保证可编译。kratos v3.0.0 已锁定。偏差 ①：本机为 Windows，Go 采用便携版（`~/.local/lib/go`，1.25.14）；偏差 ②：`.golangci.yml` depguard 规则已就位但本机未装 golangci-lint，首跑待 M2 CI 接入；偏差 ③：模板 Dockerfile 以 `ARG SERVICE_PATH` 支持同一 Dockerfile 构建任意 BC |
 | 2026-09-05 | M1（步 4-9 + 步 17 链接线） | ✅ 完成。全链 `recovery → tenantcontext → authz → audit → Tracing` 挂入 tenant-bc，HTTP/gRPC 双端口冒烟通过，pkg 全部单测绿。偏差 ①：kratos v3 无 `middleware/tracing`，自研 `observability.Tracing()`（上游 trace 提取 + Server Span + 租户属性 + 消息码状态）；偏差 ②：pgx v5.10 无 `Pool.BeginFunc`，改用包级 `pgx.BeginFunc`；偏差 ③：步 5 的 proto 错误枚举生成与 HTTP 错误编码映射，移至 M2 与契约生成一体落地；偏差 ④：OneDrive 同步曾回退个别编辑，已通过回读+重编译确认最终状态 |
+| 2026-09-06 | M4（步 14-19，data SQL + service/server + Outbox relay + e2e） | ✅ 完成。SQL 仓储五表 + 迁移（RLS/种子套餐）、service/server 装配（PlatformError 编码器 + healthz）、PG/内存双模式装配；relay（franz-go Sink 抽象 + AdminTx 轮询 SKIP LOCKED + 至少一次语义）+ dev compose（PG16/Kafka KRaft）+ e2e（开通 → outbox → Kafka 信封校验，含消费方契约预留）。偏差 ①：`pkg/dataaccess` 新增 `AdminTx`（特权事务口，relay 专用）；偏差 ②：franz-go 默认禁止生产端自动建 topic，`AllowAutoTopicCreation()` 仅 dev 便利（生产 Strimzi 预建）；偏差 ③：无 OTLP endpoint 时 noop tracer 产生不了 trace_id（破坏 BP-03 §4.1 信封不变式），改为丢弃导出器模式；偏差 ④：HTTP 编码字段名为 proto 原生 snake_case（非 protojson 驼峰），e2e 已兼容；偏差 ⑤：编辑器自动保存偶发回退未提交编辑，单文件整体重写规避 |

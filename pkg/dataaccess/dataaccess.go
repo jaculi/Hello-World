@@ -117,6 +117,14 @@ func (p *Pool) ExecMulti(ctx context.Context, script string) error {
 	return nil
 }
 
+// AdminTx 在无 RLS 绑定的特权事务中执行 fn —— 仅限基础设施任务
+// （发件箱中继、迁移台账、巡检）；应用数据访问禁用，租户数据可见性不受保护（BP-05 §4.2）。
+func (p *Pool) AdminTx(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error {
+	return pgx.BeginFunc(ctx, p.p, func(pgxTx pgx.Tx) error {
+		return fn(ctx, pgxTx)
+	})
+}
+
 // AdminQueryStrings 执行管理查询并返回首列文本结果（迁移台账/巡检专用；
 // 不绑定租户上下文——RLS 之外的特权路径，应用数据访问禁用）。
 func (p *Pool) AdminQueryStrings(ctx context.Context, sql string, args ...any) ([]string, error) {
