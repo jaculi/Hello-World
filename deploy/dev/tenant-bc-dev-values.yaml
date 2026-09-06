@@ -1,0 +1,27 @@
+# kind/k3d 本地集群部署覆盖值（步 24）：内存模式、单副本、关 HPA。
+# 前置：kubectl create secret generic tenant-bc-secrets \
+#        --from-literal=JSL_AUTHZ_JWT_SECRET=dev-kind-secret
+# 部署：helm install tenant-bc deploy/helm/tenant-bc -f deploy/dev/tenant-bc-dev-values.yaml
+replicaCount: 1
+image:
+  repository: jsl/tenant-bc
+  tag: v0.0.1
+  pullPolicy: Never      # kind load 导入的本地镜像
+
+env:
+  JSL_ENV: "dev"         # dev：无 JSL_DB_DSN 走内存替身，无 Kafka 仅告警
+  JSL_KAFKA_BROKERS: ""
+  JSL_KAFKA_TOPIC: "platform.events.v1"
+  JSL_OUTBOX_INTERVAL: "2s"
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+
+existingSecret: "tenant-bc-secrets"
+autoscaling:
+  enabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

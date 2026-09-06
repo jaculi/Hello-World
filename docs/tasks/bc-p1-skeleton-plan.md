@@ -89,9 +89,9 @@ M0 工程基建（步 1-3）→ M1 壳层组件（步 4-9）→ M2 契约（步 
 
 | # | 状态 | 步骤 | 内容要点 | 验收 |
 |---|---|---|---|---|
-| 23 | ☐ | 制品 | distroless Dockerfile + Helm chart（HPA、探针、资源配额） | BP-04 §6 |
-| 24 | ☐ | dev 环境部署 | k3d/kind 本地集群 + GitOps 目录骨架（ArgoCD Application 预留） | BP-04 §6/§2.4 |
-| 25 | ☐ | CI 全门禁 | buf → lint（含自定义规则）→ 单测 → 集成测 → 构建签名（预留） | BP-05 §7.1 预埋 |
+| 23 | ✅ | 制品 | distroless Dockerfile + Helm chart（HPA、探针、资源配额） | BP-04 §6 |
+| 24 | ✅ | dev 环境部署 | k3d/kind 本地集群 + GitOps 目录骨架（ArgoCD Application 预留） | BP-04 §6/§2.4 |
+| 25 | ✅ | CI 全门禁 | buf → lint（含自定义规则）→ 单测 → 集成测 → 构建签名（预留） | BP-05 §7.1 预埋 |
 
 ## 5. 完成定义（DoD）
 
@@ -114,3 +114,4 @@ M0 工程基建（步 1-3）→ M1 壳层组件（步 4-9）→ M2 契约（步 
 | 2026-09-05 | M1（步 4-9 + 步 17 链接线） | ✅ 完成。全链 `recovery → tenantcontext → authz → audit → Tracing` 挂入 tenant-bc，HTTP/gRPC 双端口冒烟通过，pkg 全部单测绿。偏差 ①：kratos v3 无 `middleware/tracing`，自研 `observability.Tracing()`（上游 trace 提取 + Server Span + 租户属性 + 消息码状态）；偏差 ②：pgx v5.10 无 `Pool.BeginFunc`，改用包级 `pgx.BeginFunc`；偏差 ③：步 5 的 proto 错误枚举生成与 HTTP 错误编码映射，移至 M2 与契约生成一体落地；偏差 ④：OneDrive 同步曾回退个别编辑，已通过回读+重编译确认最终状态 |
 | 2026-09-06 | M4（步 14-19，data SQL + service/server + Outbox relay + e2e） | ✅ 完成。SQL 仓储五表 + 迁移（RLS/种子套餐）、service/server 装配（PlatformError 编码器 + healthz）、PG/内存双模式装配；relay（franz-go Sink 抽象 + AdminTx 轮询 SKIP LOCKED + 至少一次语义）+ dev compose（PG16/Kafka KRaft）+ e2e（开通 → outbox → Kafka 信封校验，含消费方契约预留）。偏差 ①：`pkg/dataaccess` 新增 `AdminTx`（特权事务口，relay 专用）；偏差 ②：franz-go 默认禁止生产端自动建 topic，`AllowAutoTopicCreation()` 仅 dev 便利（生产 Strimzi 预建）；偏差 ③：无 OTLP endpoint 时 noop tracer 产生不了 trace_id（破坏 BP-03 §4.1 信封不变式），改为丢弃导出器模式；偏差 ④：HTTP 编码字段名为 proto 原生 snake_case（非 protojson 驼峰），e2e 已兼容；偏差 ⑤：编辑器自动保存偶发回退未提交编辑，单文件整体重写规避 |
 | 2026-09-06 | M5（步 20-22，RLS 实证 + ADR-0004 回归 + e2e 冒烟） | ✅ 完成。testcontainers RLS 集成测试（越界隔离、回滚不泄漏、fail-closed、AdminTx bypass）；ADR-0004 回归五项全过（中间件链顺序、OTel 租户属性、RLS 绑定、proto 双生成、biz/data 零 kratos——AST 静态回归测试固化）；e2e 全链路冒烟（开通 → 查询 → 越租户 404 → 根站点初始化）。偏差 ①：postgres 镜像默认用户为 superuser 导致 FORCE RLS 不生效，测试中创建普通角色 app_user 验证；偏差 ②：pgx ExecMulti 多语句简单协议对 `DO $$` 块与 `ALTER ROLE NOSUPERUSER` 不稳定，拆分为单语句规避 |
+| 2026-09-06 | M6（步 23-25，制品 + 部署 + CI） | ✅ 完成。distroless 多阶段 Dockerfile（41.2MB，nonroot）；Helm chart（/healthz HTTP 探针、资源配额、HPA v2、securityContext 只读根文件系统 + cap drop ALL、envFrom ConfigMap/Secret 分离敏感项）；kind 本地集群部署实证（镜像 load → helm install → rollout → port-forward /healthz=SERVING）；GitOps ArgoCD Application 骨架；CI 全门禁（buf→golangci-lint depguard→vet/单测/AST 回归→testcontainers 集成→镜像构建+容器冒烟，签名/推送随制品库接入预留）；depguard 增补 data 层禁框架规则；清理 protoc 误生成的根级空目录。偏差：无（本机无 kind，以 go install sigs.k8s.io/kind 安装 v0.27.0） |

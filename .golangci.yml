@@ -23,3 +23,9 @@ linters:
               desc: "ADR-0004：biz 领域层禁止依赖传输层"
             - pkg: "net/http"
               desc: "ADR-0004：biz 领域层禁止依赖传输层"
+        data-no-framework:
+          files:
+            - "**/internal/data/**"
+          deny:
+            - pkg: "github.com/go-kratos/kratos"
+              desc: "ADR-0004：data 数据层禁止依赖框架（仅面向 pkg/dataaccess 端口）"

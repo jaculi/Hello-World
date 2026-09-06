@@ -1,0 +1,24 @@
+# ArgoCD Application 骨架（步 24 GitOps 预留，ADR-0004 决策 3 / BP-04 §6）。
+# 集群内装好 ArgoCD 后由引导仓库 apply 本清单；指向本仓 deploy/helm/tenant-bc。
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tenant-bc
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jaculi/Hello-World.git
+    targetRevision: master
+    path: deploy/helm/tenant-bc
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

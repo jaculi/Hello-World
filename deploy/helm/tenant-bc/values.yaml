@@ -1,0 +1,43 @@
+# tenant-bc Helm values（BP-04 §6 / BP-07 §3）
+replicaCount: 2
+
+image:
+  repository: jsl/tenant-bc
+  tag: ""            # 缺省用 Chart appVersion，CI 制品链注入（BP-04 §6）
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP    # 仅集群内可达，对外统一经 APISIX 网关（BP-02 §2.1）
+  httpPort: 8000
+  grpcPort: 9000
+
+# 非敏感运行参数（ConfigMap）；敏感项见 existingSecret
+env:
+  JSL_ENV: "prod"
+  JSL_KAFKA_BROKERS: "kafka.platform:9092"
+  JSL_KAFKA_TOPIC: "platform.events.v1"
+  JSL_OUTBOX_INTERVAL: "2s"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "otel-collector.observability:4317"
+
+# 敏感环境变量由运维预建 Secret 提供（禁止入库，BP-05 §7）：
+#   JSL_DB_DSN、JSL_AUTHZ_JWT_SECRET
+existingSecret: "tenant-bc-secrets"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+probes:
+  readinessInitialDelaySeconds: 3
+  livenessInitialDelaySeconds: 10
+  periodSeconds: 10
