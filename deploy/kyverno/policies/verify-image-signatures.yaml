@@ -1,29 +1,32 @@
-# Kyverno 镜像签名校验策略（M7 / BP-05 §7.1.2 供应链安全运行时准入）
+# Kyverno 镜像签名校验策略（M9 生产化 / BP-05 §7.1.2 供应链安全运行时准入）
 #
 # 作用：运行时强制 Pod 镜像必须经过 cosign keyless 签名，且签名来源可信
 # （Fulcio 证书的 OIDC 发行者 = GitHub Actions，身份 = 本仓 workflow）。
 # 这是 CI 侧 cosign 签名（.github/workflows/ci.yml ⑤ 制品 job）的消费端。
 #
-# 匹配范围：ghcr.io/jaculi/tenant-bc:*（BC-P1 首个服务）。
-# 上线更多 BC 时，将 imageReferences 扩展为 "ghcr.io/jaculi/*:*"。
+# M9 生产化：imageReferences 扩展为平台全域通配 `ghcr.io/jaculi/*:*`——
+# monorepo 内所有 BC（含后续插件行业服务）镜像自动纳入签名校验，
+# 新 BC 落地无需修改本策略（插件式扩展，不改平台核心）。
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: verify-image-signatures
   annotations:
-    policies.kyverno.io/title: 验证 cosign keyless 镜像签名
+    policies.kyverno.io/title: 验证平台镜像 cosign keyless 签名
     policies.kyverno.io/category: Supply Chain Security
     policies.kyverno.io/severity: high
     policies.kyverno.io/subject: Pod
     policies.kyverno.io/description: >-
-      要求 ghcr.io/jaculi/tenant-bc 镜像具备由 GitHub Actions OIDC 签发的
-      cosign keyless 签名，防止未签名或被篡改的镜像进入集群。
+      要求 ghcr.io/jaculi/* 平台镜像具备由 GitHub Actions OIDC 签发的
+      cosign keyless 签名，防止未签名或被篡改的镜像进入集群；
+      后台扫描对存量 Pod 生成 PolicyReport。
 spec:
   validationFailureAction: Enforce
+  background: true
   webhookTimeoutSeconds: 30
   failurePolicy: Fail
   rules:
-    - name: verify-tenant-bc-cosign-keyless
+    - name: verify-platform-cosign-keyless
       match:
         any:
           - resources:
@@ -31,7 +34,8 @@ spec:
                 - Pod
       verifyImages:
         - imageReferences:
-            - "ghcr.io/jaculi/tenant-bc:*"
+            # 平台全域通配：monorepo 全部 BC 镜像（Kyverno 归一化规则同 Docker Hub）
+            - "ghcr.io/jaculi/*:*"
           mutateDigest: true
           attestors:
             - entries:

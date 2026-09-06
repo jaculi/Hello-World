@@ -1,5 +1,6 @@
-# ArgoCD Application：Kyverno 安装（M7，GitOps）
+# ArgoCD Application：Kyverno 安装（M9 对齐，GitOps）
 # 从官方 Helm 仓库安装 Kyverno，values 取自本仓 deploy/kyverno/values.yaml。
+# targetRevision 与 kind 实证版本对齐（chart 3.9.0 = Kyverno v1.19.0）。
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -12,7 +13,7 @@ spec:
   source:
     repoURL: https://kyverno.github.io/kyverno
     chart: kyverno
-    targetRevision: 3.2.0
+    targetRevision: 3.9.0
     helm:
       valueFiles:
         - $values/deploy/kyverno/values.yaml

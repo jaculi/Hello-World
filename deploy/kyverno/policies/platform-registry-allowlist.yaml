@@ -1,0 +1,49 @@
+# platform 命名空间镜像允许清单（M9 生产化 / BP-05 默认拒绝原则）
+#
+# 作用：纵深防御第二道闸——签名校验（verify-image-signatures）只约束"平台镜像必须可信签"，
+# 本策略反向收敛"platform 命名空间只能运行平台仓库镜像"：任何第三方镜像（含
+# Docker Hub/Quay 等）一律拒绝，防止业务 Pod 夹带未纳入供应链治理的镜像。
+# 第三方组件（如网关、观测栈）部署在各自命名空间，不受影响；确需引入时走例外评审。
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: platform-registry-allowlist
+  annotations:
+    policies.kyverno.io/title: platform 命名空间镜像允许清单
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      platform 命名空间内 Pod 的全部容器（含初始化容器）必须使用
+      ghcr.io/jaculi/* 平台镜像，默认拒绝一切外部镜像来源。
+spec:
+  validationFailureAction: Enforce
+  background: true
+  webhookTimeoutSeconds: 30
+  failurePolicy: Fail
+  rules:
+    # foreach 逐容器校验；init/ephemeral 容器可能缺省，用 `|| []` 回退为空列表
+    # （pattern 直接匹配缺省列表会对无 init 容器的普通 Pod 误判拒绝）。
+    - name: only-platform-images-in-platform-ns
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: platform
+      validate:
+        message: >-
+          platform 命名空间仅允许 ghcr.io/jaculi/* 平台镜像
+          （BP-05 默认拒绝；第三方组件部署于独立命名空间，例外走评审）。
+        foreach:
+          - list: request.object.spec.containers
+            pattern:
+              image: "ghcr.io/jaculi/*:*"
+          - list: 'request.object.spec.initContainers || `[]`'
+            pattern:
+              image: "ghcr.io/jaculi/*:*"
+          - list: 'request.object.spec.ephemeralContainers || `[]`'
+            pattern:
+              image: "ghcr.io/jaculi/*:*"

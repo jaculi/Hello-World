@@ -1,17 +1,32 @@
-# Kyverno Helm 安装 values（M7）
-# 仅覆盖与镜像验证相关的最小配置；其余取 chart 默认。
+# Kyverno Helm 安装 values（M9 生产化）
+# 仅覆盖与生产运行相关的最小配置；其余取 chart 默认。
 # 安装：helm install kyverno kyverno/kyverno -n kyverno --create-namespace -f deploy/kyverno/values.yaml
 #
 # 镜像验证依赖：Kyverno 需能访问目标镜像仓库（GHCR）与 Rekor（https://rekor.sigstore.dev）。
+# 注：validationFailureAction / failurePolicy 在各 ClusterPolicy 内显式声明（Enforce + Fail）。
 
-# 启用镜像验证 webhook（Kyverno 默认开启，显式声明以固定行为）
-verifyImages:
-  # 签名验证失败时拒绝（fail-closed，BP-05 运行时安全原则）
-  validationFailureAction: Enforce
+# 准入控制器：webhook 拦截所有 Pod 创建，单副本即单点故障（failurePolicy: Fail
+# 时 Kyverno 不可用将阻断全部发布），生产至少 3 副本跨节点打散。
+admissionController:
+  replicas: 3
+  resources:
+    limits:
+      memory: 768Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
 
-resources:
-  limits:
-    memory: 768Mi
-  requests:
-    cpu: 100m
-    memory: 256Mi
+# 后台控制器：对存量资源跑策略（生成 PolicyReport），2 副本容错。
+backgroundController:
+  replicas: 2
+  resources:
+    limits:
+      memory: 384Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# 监控（预留）：集群就绪 Prometheus Operator（ServiceMonitor CRD）后放开。
+# admissionController:
+#   serviceMonitor:
+#     enabled: true

@@ -11,9 +11,10 @@ deploy/
 │   └── tenant-bc-dev-values.yaml # kind 本地部署覆盖值（内存模式）
 ├── helm/
 │   └── tenant-bc/                # BC Helm Chart（探针/HPA/资源/安全上下文）
-├── kyverno/                      # 镜像签名准入（M7，cosign keyless 消费端）
-│   ├── values.yaml               # Kyverno Helm 安装 values
-│   └── policies/                 # ClusterPolicy：cosign keyless 签名校验
+├── kyverno/                      # 镜像签名准入（M9 生产化，cosign keyless 消费端）
+│   ├── values.yaml               # Kyverno Helm 安装 values（准入 3 副本 + 后台 2 副本 HA）
+│   ├── README.md                 # 实证矩阵与注意点
+│   └── policies/                 # ClusterPolicy：签名校验（全域通配）+ platform 允许清单
 └── gitops/
     └── argocd/                   # ArgoCD Application 清单
         ├── kyverno.yaml          # 安装 Kyverno
