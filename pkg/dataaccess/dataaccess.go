@@ -69,6 +69,21 @@ func (p *Pool) TenantTx(ctx context.Context, fn func(ctx context.Context, tx Tx)
 		// fail-closed：无租户上下文拒绝触碰数据库
 		return errors.New(CodeNoTenantContext, 500)
 	}
+	return p.tenantTxAs(ctx, tc, fn)
+}
+
+// TenantTxAs 以目标租户身份执行（开通与租户级管理操作，BP-04 §4.5）：
+// 保留原上下文 Subject 供审计记录真实操作者（BP-05 §9.1）。
+func (p *Pool) TenantTxAs(ctx context.Context, tenantID string, fn func(ctx context.Context, tx Tx) error) error {
+	if tenantID == "" {
+		return errors.New(CodeNoTenantContext, 500)
+	}
+	tc, _ := tenantcontext.From(ctx) // 仅保留 Subject；租户以目标租户为准
+	return p.tenantTxAs(ctx, tenantcontext.Context{TenantID: tenantID, Subject: tc.Subject}, fn)
+}
+
+// tenantTxAs 以指定租户上下文绑定 RLS 会话变量并执行 fn（TenantTx/TenantTxAs 共同路径）。
+func (p *Pool) tenantTxAs(ctx context.Context, tc tenantcontext.Context, fn func(ctx context.Context, tx Tx) error) error {
 	return pgx.BeginFunc(ctx, p.p, func(pgxTx pgx.Tx) error {
 		if _, err := pgxTx.Exec(ctx, "SELECT set_config($1, $2, true)", GUCTenantID, tc.TenantID); err != nil {
 			return errors.Wrap(err, "platform.data_rls_bind_failed", 500)
@@ -85,4 +100,46 @@ func (p *Pool) TenantTx(ctx context.Context, fn func(ctx context.Context, tx Tx)
 		}
 		return fn(ctx, pgxTx)
 	})
+}
+
+// ExecMulti 以简单协议执行多语句 SQL（迁移脚本专用；应用查询禁用）。
+// 整段脚本须自带 BEGIN/COMMIT 保证原子性。
+func (p *Pool) ExecMulti(ctx context.Context, script string) error {
+	c, err := p.p.Acquire(ctx)
+	if err != nil {
+		return errors.Wrap(err, "platform.data_conn_failed", 500)
+	}
+	defer c.Release()
+	res := c.Conn().PgConn().Exec(ctx, script)
+	if _, err := res.ReadAll(); err != nil {
+		return errors.Wrap(err, "platform.data_migration_failed", 500)
+	}
+	return nil
+}
+
+// AdminQueryStrings 执行管理查询并返回首列文本结果（迁移台账/巡检专用；
+// 不绑定租户上下文——RLS 之外的特权路径，应用数据访问禁用）。
+func (p *Pool) AdminQueryStrings(ctx context.Context, sql string, args ...any) ([]string, error) {
+	c, err := p.p.Acquire(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "platform.data_conn_failed", 500)
+	}
+	defer c.Release()
+	rows, err := c.Conn().Query(ctx, sql, args...)
+	if err != nil {
+		return nil, errors.Wrap(err, "platform.data_query_failed", 500)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, errors.Wrap(err, "platform.data_query_failed", 500)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "platform.data_query_failed", 500)
+	}
+	return out, nil
 }

@@ -1,4 +1,4 @@
-# 执行计划：BC-P1 租户与站点骨架模板
+﻿# 执行计划：BC-P1 租户与站点骨架模板
 
 > 状态：**待执行**（2026-09-05 制定）
 > 上游依据：[ADR-0004 go-kratos v3](../adr/0004-go-service-framework.md)（回归验证点）、[ADR-0005 事件总线与 Schema](../adr/0005-event-bus-and-schema-management.md)、[BP-02 §3.1 BC-P1](../blueprint/02-application-architecture.md)、[BP-03 §3/§4](../blueprint/03-data-architecture.md)、[BP-04 §3/§4/§6](../blueprint/04-technology-architecture.md)、[BP-05 §3/§4/§9](../blueprint/05-security-architecture.md)
@@ -45,36 +45,36 @@ M0 工程基建（步 1-3）→ M1 壳层组件（步 4-9）→ M2 契约（步 
 
 | # | 状态 | 组件 | 内容要点 | 验收依据 |
 |---|---|---|---|---|
-| 4 | ☐ | `pkg/tenantcontext` | 租户上下文（`tenant/org/site/trace`）+ HTTP/gRPC 双中间件：metadata 注入、缺失即拒、ctx 与日志字段透传 | BP-02 §2、BP-05 §4.2 |
-| 5 | ☐ | `pkg/errors` | 消息码错误封装：`code + i18n_key + params`，proto 错误枚举生成；对外不携带渲染文本 | BP-03 §4.2 |
-| 6 | ☐ | `pkg/authz` | JWT 校验中间件（桩：本地验签 + `token.tenant_id == ctx.tenant_id`）；接口按 BC-P2 对接设计 | BP-05 §3.1 |
-| 7 | ☐ | `pkg/observability` | OTel 初始化（tracer/meter）+ slog JSON（强制租户/trace 字段；S3/S4 禁入日志） | BP-04 §5 |
-| 8 | ☐ | `pkg/dataaccess` | RLS 基类：pgx 连接池 + 事务内 `SET LOCAL app.tenant_id` + 路由表接口（初版 T3 单库，T1/T2 预留）；裸 SQL 逃逸禁令 | BP-03 §3.2/§4.5 |
-| 9 | ☐ | `pkg/audit` | 审计事件发射接口（先结构化审计日志，事件形态预留至 BC-P5） | BP-05 §9.1 |
+| 4 | ✅ | `pkg/tenantcontext` | 租户上下文（`tenant/org/site/trace`）+ HTTP/gRPC 双中间件：metadata 注入、缺失即拒、ctx 与日志字段透传 | BP-02 §2、BP-05 §4.2 |
+| 5 | ✅ | `pkg/errors` | 消息码错误封装：`code + i18n_key + params`，proto 错误枚举生成；对外不携带渲染文本 | BP-03 §4.2 |
+| 6 | ✅ | `pkg/authz` | JWT 校验中间件（桩：本地验签 + `token.tenant_id == ctx.tenant_id`）；接口按 BC-P2 对接设计 | BP-05 §3.1 |
+| 7 | ✅ | `pkg/observability` | OTel 初始化（tracer/meter）+ slog JSON（强制租户/trace 字段；S3/S4 禁入日志） | BP-04 §5 |
+| 8 | ✅ | `pkg/dataaccess` | RLS 基类：pgx 连接池 + 事务内 `SET LOCAL app.tenant_id` + 路由表接口（初版 T3 单库，T1/T2 预留）；裸 SQL 逃逸禁令 | BP-03 §3.2/§4.5 |
+| 9 | ✅ | `pkg/audit` | 审计事件发射接口（先结构化审计日志，事件形态预留至 BC-P5） | BP-05 §9.1 |
 
 ### 阶段 2：契约先行（ADR-0005 首次落地）
 
 | # | 状态 | 步骤 | 内容要点 | 验收 |
 |---|---|---|---|---|
-| 10 | ☐ | `api/` 公共包 | 事件信封 proto（`event_id/tenant_id/org_id/site_id/occurred_at/trace_id` + payload） | ADR-0005 决策 2 |
-| 11 | ☐ | BC-P1 API proto | `TenantService`（创建/激活/冻结/注销）、`OrgService`、`SiteService`（站点树）、`PlanService`（套餐绑定）；单 proto 生成 HTTP+gRPC | ADR-0004 proto 双生成回归点 |
-| 12 | ☐ | 事件 proto | `platform.tenant.provisioned / suspended / deactivated`、`platform.site.created` | BP-02 §5.2 |
-| 13 | ☐ | CI 门禁 | `buf lint + buf breaking` 进流水线，违反兼容即拒绝合并 | ADR-0005 决策 2 |
+| 10 | ✅ | `api/` 公共包 | 事件信封 proto（`event_id/tenant_id/org_id/site_id/occurred_at/trace_id` + payload） | ADR-0005 决策 2 |
+| 11 | ✅ | BC-P1 API proto | `TenantService`（创建/激活/冻结/注销）、`OrgService`、`SiteService`（站点树）、`PlanService`（套餐绑定）；单 proto 生成 HTTP+gRPC | ADR-0004 proto 双生成回归点 |
+| 12 | ✅ | 事件 proto | `platform.tenant.provisioned / suspended / deactivated`、`platform.site.created` | BP-02 §5.2 |
+| 13 | ✅ | CI 门禁 | `buf lint + buf breaking` 进流水线，违反兼容即拒绝合并 | ADR-0005 决策 2 |
 
 ### 阶段 3：BC-P1 领域实现
 
 | # | 状态 | 步骤 | 内容要点 | 验收 |
 |---|---|---|---|---|
-| 14 | ☐ | `internal/biz`（零框架依赖） | 聚合：Tenant/Org/Site/Plan/Subscription；用例：开通租户（装配记录 + 默认站点/组织初始化）、冻结/恢复、注销（冻结期标记）；纯单测 | BP-02 §3.1、BP-01 §4.2 |
-| 15 | ☐ | 数据迁移脚本 | tenants / organizations / sites / plans / subscriptions 五表 + 公共字段（`row_id` ULID、审计四件套、`version`、软删）+ RLS 策略 SQL（会话变量绑定） | BP-03 §3/§4.1 |
-| 16 | ☐ | `internal/data` | PO↔领域映射、经 `pkg/dataaccess` 的仓储实现、租户路由表登记接口（隔离级别元数据；初版进程内热更新，广播预留） | BP-04 §4.5 |
-| 17 | ☐ | `internal/service+server` | kratos 壳层接线；中间件链顺序固定：`recovery → tenantcontext → authz → audit → OTel`（全平台标准） | ADR-0004 决策 2 |
+| 14 | ✅ | `internal/biz`（零框架依赖） | 聚合：Tenant/Org/Site/Plan/Subscription；用例：开通租户（装配记录 + 默认站点/组织初始化）、冻结/恢复、注销（冻结期标记）；纯单测 | BP-02 §3.1、BP-01 §4.2 |
+| 15 | ✅ | 数据迁移脚本 | tenants / organizations / sites / plans / subscriptions 五表 + 公共字段（`row_id` ULID、审计四件套、`version`、软删）+ RLS 策略 SQL（会话变量绑定） | BP-03 §3/§4.1 |
+| 16 | ✅ | `internal/data` | PO↔领域映射、经 `pkg/dataaccess` 的仓储实现、租户路由表登记接口（隔离级别元数据；初版进程内热更新，广播预留） | BP-04 §4.5 |
+| 17 | ✅ | `internal/service+server` | kratos 壳层接线；中间件链顺序固定：`recovery → tenantcontext → authz → audit → OTel`（全平台标准） | ADR-0004 决策 2 |
 
 ### 阶段 4：事件与 Outbox
 
 | # | 状态 | 步骤 | 内容要点 | 验收 |
 |---|---|---|---|---|
-| 18 | ☐ | 事务性发件箱 | 业务事务同事务写 `outbox` 表 → relay 投递 Kafka（dev 用 docker-compose；relay 接口抽象支持测试替身） | 防双写不一致 |
+| 18 | ◐ | 事务性发件箱 | 业务事务同事务写 `outbox` 表 → relay 投递 Kafka（dev 用 docker-compose；relay 接口抽象支持测试替身）。表结构与 Outbox 写入口已完成（M4），relay 与 Kafka 接入待做 | 防双写不一致 |
 | 19 | ☐ | `tenant.provisioned` 发布链路 | 端到端：开通 → outbox → Kafka（信封字段完整）；消费方契约测试预留 | 事件可到达 |
 
 ### 阶段 5：测试与 ADR-0004 回归验证
