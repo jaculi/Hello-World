@@ -1,0 +1,28 @@
+# ArgoCD Application：Kyverno 策略集（M7，GitOps）
+# 策略源在本仓 deploy/kyverno/policies/，随本仓版本演进。
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jaculi/Hello-World.git
+    targetRevision: master
+    path: deploy/kyverno/policies
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+  # 依赖 Kyverno CRD 就绪（由 kyverno Application 提供）
+  ignoreDifferences:
+    - group: kyverno.io
+      kind: ClusterPolicy
+      jsonPointers:
+        - /status

@@ -1,0 +1,28 @@
+# ArgoCD Application：Kyverno 安装（M7，GitOps）
+# 从官方 Helm 仓库安装 Kyverno，values 取自本仓 deploy/kyverno/values.yaml。
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+spec:
+  project: default
+  source:
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno
+    targetRevision: 3.2.0
+    helm:
+      valueFiles:
+        - $values/deploy/kyverno/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
