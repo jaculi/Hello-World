@@ -86,7 +86,7 @@ matchImageReferences:
     - expression: "object.spec.containers.map(c, c.image)"
   ```
 
-## 策略矩阵（十四层纵深防御）
+## 策略矩阵（十七层纵深防御）
 
 | 层 | 策略 | 类型 | 范围 | 作用 |
 |---|---|---|---|---|
@@ -101,9 +101,12 @@ matchImageReferences:
 | 9 | disallow-run-as-root | ValidatingPolicy | platform ns | 禁止 runAsUser=0 |
 | 10 | require-default-proc-mount | ValidatingPolicy | platform ns | 禁止 procMount=Unmasked |
 | 11 | disallow-host-aliases | ValidatingPolicy | platform ns | 禁止 hostAliases |
-| 12 | require-namespace-network-isolation | ValidatingPolicy | 全集群 ns | 网络隔离声明标签 |
-| 13 | require-namespace-quota | ValidatingPolicy | 全集群 ns | 资源配额声明标签 |
-| 14 | require-namespace-labels | ValidatingPolicy | 全集群 ns | team/environment/cost-center |
+| 12 | disallow-cluster-admin-binding | ValidatingPolicy | 全集群 RBAC | 禁止 cluster-admin 绑定 |
+| 13 | disallow-wildcard-rbac | ValidatingPolicy | 全集群 RBAC | 禁止通配符 RBAC 权限 |
+| 14 | disallow-default-service-account | ValidatingPolicy | platform ns | 禁止使用 default SA |
+| 15 | require-namespace-network-isolation | ValidatingPolicy | 全集群 ns | 网络隔离声明标签 |
+| 16 | require-namespace-quota | ValidatingPolicy | 全集群 ns | 资源配额声明标签 |
+| 17 | require-namespace-labels | ValidatingPolicy | 全集群 ns | team/environment/cost-center |
 
 ## 策略例外机制（PolicyException）
 

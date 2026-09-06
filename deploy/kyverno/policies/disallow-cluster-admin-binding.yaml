@@ -1,0 +1,34 @@
+# 禁止 cluster-admin 角色绑定（M15 / BP-05 默认拒绝·最小权限）
+#
+# 禁止将任何主体绑定到 cluster-admin 集群角色，防止权限过度授予。
+# cluster-admin 拥有集群全权限，绑定即等同集群 root，须经严格评审后例外。
+# 覆盖 ClusterRoleBinding（集群范围）与 RoleBinding（命名空间范围引用 cluster-admin）。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-cluster-admin-binding
+  annotations:
+    policies.kyverno.io/title: 禁止 cluster-admin 角色绑定
+    policies.kyverno.io/category: RBAC
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: RoleBinding
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        resources: ["clusterrolebindings", "rolebindings"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.roleRef.name != 'cluster-admin'
+      message: "禁止绑定到 cluster-admin 集群角色（最小权限原则），须经评审后例外"
+  evaluation:
+    background:
+      enabled: false
+    admission:
+      enabled: true

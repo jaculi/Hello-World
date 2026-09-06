@@ -1,4 +1,4 @@
-# deploy/kyverno/ —— 准入控制（M14 生产基线·十四层纵深防御）
+# deploy/kyverno/ —— 准入控制（M15 RBAC 最小权限·十七层纵深防御）
 
 > 依据：[BP-05 §7.1.2 供应链安全](../blueprint/05-security-architecture.md)（包签名验证、镜像扫描、SBOM）、BP-05 默认拒绝 + 纵深防御原则、BP-04 资源治理与制品可追溯
 > 这是 CI 侧 cosign keyless 签名（`.github/workflows/ci.yml` ⑤ 制品 job）的**运行时消费端**。
@@ -21,11 +21,17 @@
 10. **禁止未屏蔽 procMount**（`require-default-proc-mount`，`ValidatingPolicy`）：容器 `procMount` 必须为 `Default`，禁止 `Unmasked` 暴露宿主机 /proc。
 11. **禁止 hostAlias**（`disallow-host-aliases`，`ValidatingPolicy`）：禁止 Pod 设置 `spec.hostAliases`，防止 DNS 劫持与绕过集群服务发现。
 
+### RBAC 级（全集群）
+
+12. **禁止 cluster-admin 绑定**（`disallow-cluster-admin-binding`，`ValidatingPolicy`）：禁止 ClusterRoleBinding/RoleBinding 绑定到 cluster-admin 角色，防止权限过度授予。
+13. **禁止通配符 RBAC**（`disallow-wildcard-rbac`，`ValidatingPolicy`）：禁止 Role/ClusterRole 中 verbs/resources/apiGroups 含 `*`，须显式声明最小权限。
+14. **禁止 default SA**（`disallow-default-service-account`，`ValidatingPolicy`）：platform 命名空间 Pod 禁止使用 default ServiceAccount，须显式指定专用 SA。
+
 ### Namespace 级（全集群）
 
-12. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
-13. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
-14. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
+15. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
+16. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
+17. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
 
 **策略例外**：默认拒绝，确需豁免时经安全评审后创建 `PolicyException`（仅允许在 kyverno 命名空间创建，由平台管理员统一管理），须设 `expiresAt` 到期自动失效。
 
@@ -50,6 +56,9 @@ deploy/kyverno/
 │   ├── disallow-run-as-root.yaml             # ValidatingPolicy：禁止 root 用户运行
 │   ├── require-default-proc-mount.yaml       # ValidatingPolicy：禁止未屏蔽 procMount
 │   ├── disallow-host-aliases.yaml            # ValidatingPolicy：禁止 hostAlias
+│   ├── disallow-cluster-admin-binding.yaml   # ValidatingPolicy：禁止 cluster-admin 绑定
+│   ├── disallow-wildcard-rbac.yaml           # ValidatingPolicy：禁止通配符 RBAC 权限
+│   ├── disallow-default-service-account.yaml # ValidatingPolicy：禁止使用 default SA
 │   ├── require-namespace-network-isolation.yaml  # ValidatingPolicy：命名空间网络隔离声明
 │   ├── require-namespace-quota.yaml          # ValidatingPolicy：命名空间资源配额声明
 │   └── require-namespace-labels.yaml         # ValidatingPolicy：命名空间必需标签
