@@ -1,0 +1,30 @@
+# 策略例外模板（M11 / BP-05 例外走评审）
+#
+# 生产环境策略默认拒绝（deny-by-default）。确需豁免时，经安全评审后
+# 复制本模板并提交至 GitOps 仓的 deploy/kyverno/exceptions/ 目录。
+#
+# 强制字段：
+#   metadata.name           —— 例外名称（含工单号/评审号）
+#   metadata.namespace      —— 例外作用命名空间
+#   spec.policyRefs         —— 豁免的策略列表（kind + name）
+#   spec.matchConditions    —— CEL 表达式，返回 true 时应用例外
+#   spec.expiresAt          —— ISO 8601 过期时间，到期自动失效
+#
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: <exception-name>
+  namespace: kyverno
+  labels:
+    jsl-platform/exception-review: "true"
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: require-pod-security-restricted
+    - kind: ValidatingPolicy
+      name: require-resource-limits
+  matchConditions:
+    - name: match-by-exception-label
+      expression: >-
+        object.metadata.?labels.orValue({}).exists(key, key == 'jsl-platform/exception')
+  expiresAt: "2026-12-31T23:59:59Z"

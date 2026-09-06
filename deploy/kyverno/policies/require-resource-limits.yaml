@@ -1,0 +1,66 @@
+# 资源限制强制（M11 / BP-05 纵深防御 + BP-04 资源治理）
+#
+# 强制 platform 命名空间的 Pod 中所有容器声明 CPU/内存的 requests 与 limits，
+# 防止资源耗尽（Noisy Neighbor / OOM 雪崩）与调度失衡。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: 强制容器资源 requests/limits
+    policies.kyverno.io/category: Resource Management
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 15
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.spec.containers.all(c,
+          has(c.resources) &&
+          has(c.resources.requests) &&
+          has(c.resources.requests.cpu) &&
+          has(c.resources.requests.memory) &&
+          has(c.resources.limits) &&
+          has(c.resources.limits.cpu) &&
+          has(c.resources.limits.memory)
+        )
+      message: "容器必须声明 CPU/内存的 requests 与 limits"
+    - expression: >-
+        (object.spec.?initContainers.orValue([])).all(c,
+          has(c.resources) &&
+          has(c.resources.requests) &&
+          has(c.resources.requests.cpu) &&
+          has(c.resources.requests.memory) &&
+          has(c.resources.limits) &&
+          has(c.resources.limits.cpu) &&
+          has(c.resources.limits.memory)
+        )
+      message: "初始化容器必须声明 CPU/内存的 requests 与 limits"
+    - expression: >-
+        (object.spec.?ephemeralContainers.orValue([])).all(c,
+          has(c.resources) &&
+          has(c.resources.requests) &&
+          has(c.resources.requests.cpu) &&
+          has(c.resources.requests.memory) &&
+          has(c.resources.limits) &&
+          has(c.resources.limits.cpu) &&
+          has(c.resources.limits.memory)
+        )
+      message: "临时容器必须声明 CPU/内存的 requests 与 limits"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true

@@ -11,10 +11,11 @@ deploy/
 │   └── tenant-bc-dev-values.yaml # kind 本地部署覆盖值（内存模式）
 ├── helm/
 │   └── tenant-bc/                # BC Helm Chart（探针/HPA/资源/安全上下文）
-├── kyverno/                      # 镜像签名准入（M10 CEL 迁移，cosign keyless 消费端）
-│   ├── values.yaml               # Kyverno Helm 安装 values（准入 3 副本 + 后台 2 副本 HA）
-│   ├── README.md                 # 实证矩阵与 CEL 迁移注意点
-│   └── policies/                 # CEL 策略：ImageValidatingPolicy（签名校验，全域通配）+ ValidatingPolicy（platform 允许清单）
+├── kyverno/                      # 准入控制（M11 纵深防御，四层 CEL 策略）
+│   ├── values.yaml               # Kyverno Helm 安装 values（HA + PolicyException）
+│   ├── README.md                 # 四层准入说明与实证矩阵
+│   ├── policies/                 # CEL 策略集（签名校验/允许清单/PSS/资源限制）
+│   └── exceptions/               # 策略例外模板（PolicyException，须评审+过期）
 └── gitops/
     └── argocd/                   # ArgoCD Application 清单
         ├── kyverno.yaml          # 安装 Kyverno

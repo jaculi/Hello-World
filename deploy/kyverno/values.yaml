@@ -30,3 +30,11 @@ backgroundController:
 # admissionController:
 #   serviceMonitor:
 #     enabled: true
+
+# 策略例外（PolicyException）：默认关闭，M11 显式开启。
+# 例外资源仅允许在 kyverno 命名空间创建（namespace 限制），由平台管理员统一管理，
+# 防止业务命名空间自行创建例外绕过策略。
+features:
+  policyExceptions:
+    enabled: true
+    namespace: "kyverno"

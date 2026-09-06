@@ -1,0 +1,79 @@
+# Pod 安全标准 restricted（M11 / BP-05 纵深防御）
+#
+# 强制平台命名空间的 Pod 满足 Kubernetes Pod Security Standards restricted 级别，
+# 防止容器逃逸与权限提升。覆盖所有容器（含 init/ephemeral）。
+# 仅约束 platform 命名空间（业务 BC 运行域）；系统命名空间（kube-system、kyverno 等）
+# 不受影响。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-pod-security-restricted
+  annotations:
+    policies.kyverno.io/title: Pod 安全标准 restricted
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 30
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    # 1. 禁止宿主命名空间共享
+    - expression: >-
+        !object.spec.?hostNetwork.orValue(false) &&
+        !object.spec.?hostPID.orValue(false) &&
+        !object.spec.?hostIPC.orValue(false)
+      message: "禁止共享宿主网络/PID/IPC 命名空间（PSS restricted）"
+    # 2. 禁止 hostPath 卷
+    - expression: >-
+        (object.spec.?volumes.orValue([])).all(v, !has(v.hostPath))
+      message: "禁止使用 hostPath 卷（PSS restricted）"
+    # 3. 容器安全上下文：containers（.? 逐层安全访问，缺省字段不报错）
+    - expression: >-
+        object.spec.containers.all(c,
+          (c.?securityContext.?privileged.orValue(false) == false) &&
+          (c.?securityContext.?allowPrivilegeEscalation.orValue(false) == false) &&
+          (c.?securityContext.?runAsNonRoot.orValue(false) == true) &&
+          (c.?securityContext.?readOnlyRootFilesystem.orValue(false) == true) &&
+          (c.?securityContext.?capabilities.?drop.orValue([])).exists(cap, cap == 'ALL')
+        )
+      message: "容器必须满足 PSS restricted：privileged=false, allowPrivilegeEscalation=false, runAsNonRoot=true, readOnlyRootFilesystem=true, capabilities.drop 含 ALL"
+    # 4. 容器安全上下文：initContainers
+    - expression: >-
+        (object.spec.?initContainers.orValue([])).all(c,
+          (c.?securityContext.?privileged.orValue(false) == false) &&
+          (c.?securityContext.?allowPrivilegeEscalation.orValue(false) == false) &&
+          (c.?securityContext.?runAsNonRoot.orValue(false) == true) &&
+          (c.?securityContext.?readOnlyRootFilesystem.orValue(false) == true) &&
+          (c.?securityContext.?capabilities.?drop.orValue([])).exists(cap, cap == 'ALL')
+        )
+      message: "初始化容器必须满足 PSS restricted（同上）"
+    # 5. 容器安全上下文：ephemeralContainers
+    - expression: >-
+        (object.spec.?ephemeralContainers.orValue([])).all(c,
+          (c.?securityContext.?privileged.orValue(false) == false) &&
+          (c.?securityContext.?allowPrivilegeEscalation.orValue(false) == false) &&
+          (c.?securityContext.?runAsNonRoot.orValue(false) == true) &&
+          (c.?securityContext.?readOnlyRootFilesystem.orValue(false) == true) &&
+          (c.?securityContext.?capabilities.?drop.orValue([])).exists(cap, cap == 'ALL')
+        )
+      message: "临时容器必须满足 PSS restricted（同上）"
+    # 6. seccompProfile 必须为 RuntimeDefault（Pod 级别；.? 安全访问避免缺省字段报错）
+    - expression: >-
+        (object.spec.?securityContext.orValue({})).?seccompProfile.orValue({}).type == 'RuntimeDefault'
+      message: "Pod securityContext.seccompProfile.type 必须为 RuntimeDefault（PSS restricted）"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true

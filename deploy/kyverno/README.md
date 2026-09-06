@@ -1,23 +1,33 @@
-# deploy/kyverno/ —— 镜像签名准入（M10 CEL 迁移）
+# deploy/kyverno/ —— 准入控制（M11 纵深防御）
 
-> 依据：[BP-05 §7.1.2 供应链安全](../blueprint/05-security-architecture.md)（包签名验证、镜像扫描、SBOM）、BP-05 默认拒绝原则
+> 依据：[BP-05 §7.1.2 供应链安全](../blueprint/05-security-architecture.md)（包签名验证、镜像扫描、SBOM）、BP-05 默认拒绝 + 纵深防御原则
 > 这是 CI 侧 cosign keyless 签名（`.github/workflows/ci.yml` ⑤ 制品 job）的**运行时消费端**。
 
 ## 作用
 
-两层准入（纵深防御，均为 Deny + fail-closed），M10 起全部迁移至 **CEL 策略**（`policies.kyverno.io/v1`），告别已废弃的 `ClusterPolicy`（kyverno.io）：
+四层准入（纵深防御，均为 Deny + fail-closed），全部使用 **CEL 策略**（`policies.kyverno.io/v1`），覆盖 platform 命名空间：
 
-1. **签名校验**（`verify-image-signatures`，`ImageValidatingPolicy`）：`ghcr.io/jaculi/*:*` 全部平台镜像必须具备由 GitHub Actions OIDC 签发的 cosign keyless 签名（monorepo 内所有 BC 与后续插件行业服务**自动纳入**，新 BC 落地无需改策略）；验证通过后自动 pin 到 digest（`mutateDigest`），防标签重放。后台扫描对存量 Pod 生成 PolicyReport。
-2. **允许清单**（`platform-registry-allowlist`，`ValidatingPolicy`）：`platform` 命名空间内全部容器（含 init/ephemeral）只允许 `ghcr.io/jaculi/*` 镜像——签名校验约束"平台镜像必须可信"，本策略反向收敛"platform 只跑平台镜像"，防止业务 Pod 夹带未纳入供应链治理的第三方镜像。第三方组件部署于独立命名空间，不受影响；确需引入时走例外评审。
+1. **签名校验**（`verify-image-signatures`，`ImageValidatingPolicy`）：`ghcr.io/jaculi/*:*` 全部平台镜像必须具备由 GitHub Actions OIDC 签发的 cosign keyless 签名；验证通过后自动 pin 到 digest（`mutateDigest`），防标签重放。后台扫描对存量 Pod 生成 PolicyReport。
+2. **允许清单**（`platform-registry-allowlist`，`ValidatingPolicy`）：platform 命名空间内全部容器（含 init/ephemeral）只允许 `ghcr.io/jaculi/*` 镜像，防止业务 Pod 夹带未纳入供应链治理的第三方镜像。
+3. **Pod 安全标准 restricted**（`require-pod-security-restricted`，`ValidatingPolicy`）：强制 privileged=false、allowPrivilegeEscalation=false、runAsNonRoot=true、readOnlyRootFilesystem=true、capabilities.drop=[ALL]、seccompProfile=RuntimeDefault、禁止 hostNetwork/hostPID/hostIPC/hostPath。防容器逃逸与权限提升。
+4. **资源限制强制**（`require-resource-limits`，`ValidatingPolicy`）：全部容器必须声明 CPU/内存的 requests 与 limits，防止资源耗尽与调度失衡。
+
+**策略例外**：默认拒绝，确需豁免时经安全评审后创建 `PolicyException`（仅允许在 kyverno 命名空间创建，由平台管理员统一管理），须设 `expiresAt` 到期自动失效。
 
 ## 目录结构
 
 ```
 deploy/kyverno/
-├── values.yaml                          # Kyverno Helm 安装 values（准入 3 副本 + 后台 2 副本 HA）
-└── policies/
-    ├── verify-image-signatures.yaml     # ImageValidatingPolicy（CEL）：cosign keyless 签名校验（平台全域通配）
-    └── platform-registry-allowlist.yaml # ValidatingPolicy（CEL）：platform 命名空间镜像允许清单
+├── values.yaml                          # Kyverno Helm 安装 values（HA + PolicyException 启用）
+├── README.md
+├── policies/                            # 策略集（CEL，ArgoCD 同步）
+│   ├── verify-image-signatures.yaml     # ImageValidatingPolicy：cosign keyless 签名校验
+│   ├── platform-registry-allowlist.yaml # ValidatingPolicy：platform 镜像允许清单
+│   ├── require-pod-security-restricted.yaml  # ValidatingPolicy：PSS restricted
+│   └── require-resource-limits.yaml     # ValidatingPolicy：资源 requests/limits 强制
+└── exceptions/                          # 策略例外模板（PolicyException）
+    ├── README.md                        # 例外流程说明
+    └── template.yaml                    # 例外模板（namespace=kyverno，须 expiresAt）
 ```
 
 ## 安装（生产）
