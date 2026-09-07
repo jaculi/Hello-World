@@ -29,7 +29,8 @@
       "directAccessGrantsEnabled": true,
       "redirectUris": [
         "http://localhost:9080/*",
-        "http://localhost:3000/*"
+        "http://localhost:3000/*",
+        "http://portal.localtest.me:8080/*"
       ],
       "webOrigins": [
         "+"

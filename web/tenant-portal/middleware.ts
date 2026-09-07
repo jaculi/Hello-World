@@ -3,6 +3,6 @@
 export { auth as middleware } from "@/auth";
 
 export const config = {
-  // 匹配所有路径，排除 Auth.js 自身路由、登录页、Next 静态资产。
-  matcher: ["/((?!login|api/auth|_next/static|_next/image|favicon.ico).*)"],
+  // 匹配所有路径，排除 Auth.js 自身路由、登录页、健康探针、Next 静态资产。
+  matcher: ["/((?!login|api/auth|healthz|_next/static|_next/image|favicon.ico).*)"],
 };

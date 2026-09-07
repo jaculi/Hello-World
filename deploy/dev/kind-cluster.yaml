@@ -1,0 +1,13 @@
+# kind 集群配置（M20）：映射宿主 8080 → APISIX NodePort 30080。
+# 浏览器 http://portal.localtest.me:8080 与 http://auth.localtest.me:8080 均经 localtest.me
+# 通配 DNS 解析到 127.0.0.1:8080 → kind node port 30080 → APISIX。
+# 注意：宿主 80 被 Docker Desktop 占用，改用 8080。
+# 用法：kind create cluster --name m20 --config deploy/dev/kind-cluster.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080   # APISIX HTTP NodePort（deploy/gateway/apisix/values.yaml 固定）
+        hostPort: 8080         # 浏览器 *.localtest.me:8080 → kind → APISIX
+        protocol: TCP

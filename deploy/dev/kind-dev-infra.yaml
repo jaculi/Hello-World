@@ -1,0 +1,257 @@
+# kind dev 基础设施清单（M20）：Keycloak + APISIX + 命名空间 + Secret。
+# Helm chart 版本作生产制品保留；dev 验证用本清单快速起服务。
+# 用法：kubectl apply -f deploy/dev/kind-dev-infra.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apisix
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+---
+# Keycloak realm 导入
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm-import
+  namespace: keycloak
+data:
+  jsl-realm.json: |
+    {
+      "realm": "jsl",
+      "enabled": true,
+      "accessTokenLifespan": 300,
+      "sslRequired": "none",
+      "roles": { "realm": [{ "name": "TENANT_ADMIN" }, { "name": "PLATFORM_ADMIN" }] },
+      "clients": [{
+        "clientId": "jsl-gateway",
+        "enabled": true,
+        "protocol": "openid-connect",
+        "publicClient": false,
+        "secret": "dev-gateway-secret",
+        "standardFlowEnabled": true,
+        "directAccessGrantsEnabled": true,
+        "redirectUris": ["http://localhost:9080/*", "http://localhost:3000/*", "http://portal.localtest.me:8080/*"],
+        "webOrigins": ["+"],
+        "protocolMappers": [
+          { "name": "tenant-id", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": false, "config": { "user.attribute": "tenant_id", "claim.name": "tenant_id", "jsonType.label": "String", "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true", "multivalued": "false" } },
+          { "name": "client-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper", "consentRequired": false, "config": { "included.client.audience": "jsl-gateway", "id.token.claim": "true", "access.token.claim": "true", "lightweight.claim": "false" } }
+        ]
+      }],
+      "users": [{
+        "username": "demo-admin",
+        "enabled": true,
+        "emailVerified": true,
+        "email": "demo-admin@example.com",
+        "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
+        "attributes": { "tenant_id": ["01JSM18DEM0TENANT000000001"] },
+        "realmRoles": ["TENANT_ADMIN"]
+      }]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels: { app: keycloak }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: keycloak } }
+  template:
+    metadata: { labels: { app: keycloak } }
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.1
+          args: ["start-dev", "--import-realm"]
+          env:
+            - name: KEYCLOAK_ADMIN
+              value: admin
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: admin
+            - name: KC_HOSTNAME
+              value: "http://auth.localtest.me:8080"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+          ports:
+            - containerPort: 8080
+            - containerPort: 9000
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      volumes:
+        - name: realm-import
+          configMap: { name: keycloak-realm-import }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  selector: { app: keycloak }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+# APISIX standalone 配置
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apisix-standalone-config
+  namespace: apisix
+data:
+  config.yaml: |
+    deployment:
+      role: data_plane
+      role_data_plane:
+        config_provider: yaml
+    apisix:
+      node_listen: 9080
+    nginx:
+      worker_processes: 2
+    plugins:
+      - openid-connect
+      - serverless-pre-function
+      - proxy-rewrite
+  apisix.yaml: |
+    routes:
+      - id: portal
+        uri: /*
+        hosts: ["portal.localtest.me"]
+        upstream:
+          type: roundrobin
+          nodes:
+            "tenant-portal.platform.svc.cluster.local:3000": 1
+      - id: keycloak-realms
+        uri: /realms/*
+        hosts: ["auth.localtest.me"]
+        upstream:
+          type: roundrobin
+          nodes:
+            "keycloak.keycloak.svc.cluster.local:80": 1
+      - id: keycloak-resources
+        uri: /resources/*
+        hosts: ["auth.localtest.me"]
+        upstream:
+          type: roundrobin
+          nodes:
+            "keycloak.keycloak.svc.cluster.local:80": 1
+      - id: platform-api
+        uri: /api/*
+        hosts: ["auth.localtest.me"]
+        plugins:
+          proxy-rewrite:
+            regex_uri: ["^/api/(.*)", "/$1"]
+          openid-connect:
+            discovery: http://keycloak.keycloak.svc.cluster.local/realms/jsl/.well-known/openid-configuration
+            client_id: jsl-gateway
+            client_secret: dev-gateway-secret
+            bearer_only: true
+            realm: jsl
+            set_access_token_header: true
+          serverless-pre-function:
+            phase: rewrite
+            functions:
+              - |
+                return function(conf, ctx)
+                  local core = require("apisix.core")
+                  local auth = core.request.header(ctx, "Authorization")
+                  if not auth then return end
+                  local token = auth:gsub("^Bearer%s+", "")
+                  local payload = token:match("^[^.]+%.([^.]+)%.[^.]+$")
+                  if not payload then return end
+                  local b64 = require("ngx.base64")
+                  local ok, decoded = pcall(b64.decode_base64url, payload)
+                  if not ok or not decoded then return end
+                  local okj, claims = pcall(core.json.decode, decoded)
+                  if okj and claims and claims.tenant_id then
+                    core.request.set_header(ctx, "X-Tenant-Id", claims.tenant_id)
+                  end
+                end
+        upstream:
+          type: roundrobin
+          nodes:
+            "tenant-bc.platform.svc.cluster.local:8000": 1
+    #END
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apisix
+  namespace: apisix
+  labels: { app: apisix }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: apisix } }
+  template:
+    metadata: { labels: { app: apisix } }
+    spec:
+      containers:
+        - name: apisix
+          image: apache/apisix:3.11.0-debian
+          ports:
+            - containerPort: 9080
+          volumeMounts:
+            - name: standalone-config
+              mountPath: /usr/local/apisix/conf/config.yaml
+              subPath: config.yaml
+            - name: standalone-config
+              mountPath: /usr/local/apisix/conf/apisix.yaml
+              subPath: apisix.yaml
+      volumes:
+        - name: standalone-config
+          configMap: { name: apisix-standalone-config }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apisix
+  namespace: apisix
+spec:
+  type: NodePort
+  selector: { app: apisix }
+  ports:
+    - name: http
+      port: 9080
+      targetPort: 9080
+      nodePort: 30080
+---
+# 平台命名空间 Secret（tenant-bc + tenant-portal）
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tenant-bc-secrets
+  namespace: platform
+stringData:
+  JSL_AUTHZ_JWT_SECRET: "dev-kind-secret"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tenant-portal-secrets
+  namespace: platform
+stringData:
+  AUTH_SECRET: "Bcjn1OYkuv0dR86PViXEM7h5TSGKpax2qUebgrDtWlzmFCI4"
+  AUTH_KEYCLOAK_SECRET: "dev-gateway-secret"

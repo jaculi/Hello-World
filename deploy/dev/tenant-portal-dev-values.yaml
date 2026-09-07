@@ -1,0 +1,31 @@
+# kind 本地集群部署覆盖值（M20）：本地镜像、单副本、关 HPA。
+# 前置：
+#   kubectl create secret generic tenant-portal-secrets -n platform \
+#     --from-literal=AUTH_SECRET=Bcjn1OYkuv0dR86PViXEM7h5TSGKpax2qUebgrDtWlzmFCI4 \
+#     --from-literal=AUTH_KEYCLOAK_SECRET=dev-gateway-secret
+# 部署：helm install tenant-portal deploy/helm/tenant-portal -f deploy/dev/tenant-portal-dev-values.yaml
+replicaCount: 1
+image:
+  repository: jsl/tenant-portal
+  tag: v0.0.1
+  pullPolicy: Never      # kind load 导入的本地镜像
+
+# issuer 对齐值同基线（hostname + 端口，dev/prod 一致）
+env:
+  NODE_ENV: "production"
+  PORT: "3000"
+  AUTH_URL: "http://portal.localtest.me:8080"
+  AUTH_KEYCLOAK_ID: "jsl-gateway"
+  AUTH_KEYCLOAK_ISSUER: "http://auth.localtest.me:8080/realms/jsl"
+  APISIX_API_BASE: "http://auth.localtest.me:8080/api"
+
+existingSecret: "tenant-portal-secrets"
+autoscaling:
+  enabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

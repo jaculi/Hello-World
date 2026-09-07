@@ -1,0 +1,52 @@
+# tenant-portal Helm values（M20 / BP-04 §3 §6）
+# 生产基线：双副本、GHCR 镜像、Kyverno 全合规安全上下文。
+# dev override 见 deploy/dev/tenant-portal-dev-values.yaml。
+replicaCount: 2
+
+image:
+  repository: ghcr.io/jaculi/tenant-portal  # CI 推 GHCR（master: sha-* + latest），M20 暂本地构建
+  tag: ""            # 缺省用 Chart appVersion
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP    # 对外经 APISIX 路由（hostname 分流），不经 NodePort/LB（Kyverno disallow-node-port-lb）
+  port: 3000
+  targetPort: 3000
+
+serviceAccount:
+  create: true
+  name: ""           # 缺省由 _helpers 生成
+
+# 非敏感运行参数（ConfigMap）
+env:
+  NODE_ENV: "production"
+  PORT: "3000"
+  # M20 issuer 对齐：浏览器与门户 pod 经同一 hostname auth.localtest.me:8080 访问 Keycloak/APISIX
+  AUTH_URL: "http://portal.localtest.me:8080"
+  AUTH_KEYCLOAK_ID: "jsl-gateway"
+  AUTH_KEYCLOAK_ISSUER: "http://auth.localtest.me:8080/realms/jsl"
+  APISIX_API_BASE: "http://auth.localtest.me:8080/api"
+
+# 敏感环境变量由运维预建 Secret 提供（禁止入库，BP-05 §7）：
+#   AUTH_SECRET（Auth.js 会话加密密钥）
+#   AUTH_KEYCLOAK_SECRET（Keycloak client secret）
+existingSecret: "tenant-portal-secrets"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+probes:
+  readinessInitialDelaySeconds: 3
+  livenessInitialDelaySeconds: 10
+  periodSeconds: 10

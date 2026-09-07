@@ -11,7 +11,8 @@ deploy/
 │   ├── m18-auth-smoke.sh         # 认证链路冒烟脚本（compose 网络内运行）
 │   └── tenant-bc-dev-values.yaml # kind 本地部署覆盖值（内存模式）
 ├── helm/
-│   └── tenant-bc/                # BC Helm Chart（探针/HPA/资源/安全上下文）
+│   ├── tenant-bc/                # BC Helm Chart（探针/HPA/资源/安全上下文）
+│   └── tenant-portal/            # 门户 Helm Chart（M20，Next.js standalone + 探针/SA/安全上下文）
 ├── kyverno/                      # 准入控制（M7-M17 二十三层纵深防御，CEL 策略）
 │   ├── values.yaml               # Kyverno Helm 安装 values（HA + PolicyException）
 │   ├── README.md                 # 策略说明与实证矩阵

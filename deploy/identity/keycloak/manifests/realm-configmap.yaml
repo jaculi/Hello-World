@@ -29,7 +29,7 @@ data:
           "secret": "dev-gateway-secret",
           "standardFlowEnabled": true,
           "directAccessGrantsEnabled": true,
-          "redirectUris": ["http://localhost:9080/*", "http://localhost:3000/*"],
+          "redirectUris": ["http://localhost:9080/*", "http://localhost:3000/*", "http://portal.localtest.me:8080/*"],
           "webOrigins": ["+"],
           "protocolMappers": [
             {

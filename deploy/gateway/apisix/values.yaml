@@ -1,8 +1,14 @@
-# APISIX Helm values（M18 dev）：standalone 声明式路由（无 etcd）。
+# APISIX Helm values（M18 + M20 dev）：standalone 声明式路由（无 etcd）。
 # Chart: apisix（https://charts.apiseven.com），appVersion 对齐 3.11。
 # 路由/插件声明经 manifests/apisix-standalone-configmap.yaml 注入。
 gateway:
   type: NodePort
+  http:
+    nodePort: 30080  # M20：固定 HTTP NodePort，kind extraPortMappings 80→30080
+    # M20 修正：Service port 与 NodePort host port 对齐为 8080，
+    # 这样集群内 CoreDNS rewrite（auth.localtest.me → apisix.apisix.svc）
+    # 后，门户可经 http://auth.localtest.me:8080 访问 OIDC 发现端点。
+    servicePort: 8080
   ingress:
     enabled: false
   tls:

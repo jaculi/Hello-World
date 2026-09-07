@@ -23,6 +23,8 @@ keycloak:
     - "start-dev"
     - "--import-realm"
   extraEnvVars:
+    - name: KC_HOSTNAME
+      value: "http://auth.localtest.me:8080"  # M20：锁定浏览器面 hostname，令牌 iss=http://auth.localtest.me:8080/realms/jsl
     - name: KC_HOSTNAME_STRICT
       value: "false"
     - name: KC_HTTP_ENABLED

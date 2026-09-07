@@ -1,0 +1,42 @@
+# CoreDNS ConfigMap patch（M20）：使 pod 内 auth.localtest.me 解析到 APISIX ClusterIP。
+#
+# 原因：Auth.js v5 用 AUTH_KEYCLOAK_ISSUER 同时做浏览器 authorize 与服务端 discovery/token
+# 交换，无独立 backchannel 配置项。KC_HOSTNAME=http://auth.localtest.me 后 discovery 文档
+# 所有 URL 指向 auth.localtest.me，pod 内必须解析该 hostname → APISIX。
+#
+# portal.localtest.me 不需 rewrite——仅浏览器访问门户用，pod 内无需解析。
+#
+# 用法（kind 集群已起后）：
+#   kubectl apply -f deploy/dev/coredns-rewrite-patch.yaml
+#   kubectl rollout restart deployment coredns -n kube-system
+#
+# 验证：
+#   kubectl run dns-test --rm -it --image=busybox -- nslookup auth.localtest.me
+#   # 应解析到 apisix.apisix.svc.cluster.local 的 ClusterIP
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health {
+           lameduck 5s
+        }
+        ready
+        rewrite name auth.localtest.me apisix.apisix.svc.cluster.local
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+           pods insecure
+           fallthrough in-addr.arpa ip6.arpa
+        }
+        prometheus :9153
+        forward . /etc/resolv.conf {
+           max_concurrent 1000
+        }
+        cache 30
+        loop
+        reload
+        loadbalance
+    }

@@ -14,13 +14,14 @@ env:
   JSL_KAFKA_TOPIC: "platform.events.v1"
   JSL_OUTBOX_INTERVAL: "2s"
   OTEL_EXPORTER_OTLP_ENDPOINT: ""
-  # ── M18 认证（默认 stub 本地 HMAC；接入 Keycloak 时切换 jwks）──
-  # JWKS 模式（集群内 issuer 经 APISIX 入口对齐，见 deploy/gateway/README.md）：
-  # JSL_AUTHZ_MODE: "jwks"
-  # JSL_AUTHZ_ISSUER: "http://localhost:9080/realms/jsl"
-  # JSL_AUTHZ_AUDIENCE: "jsl-gateway"
-  # JSL_AUTHZ_TENANT_CLAIM: "tenant_id"
-  JSL_AUTHZ_MODE: "stub"
+  # ── M19/M20 认证：JWKS 远程验签（Keycloak 签发，APISIX 已验一次，BC 二次校验）──
+  # issuer 与浏览器面一致（KC_HOSTNAME 锁定）；JWKS 发现经 backchannel 直连集群内
+  # Keycloak Service（Port 80），绕开对 APISIX 的依赖。
+  JSL_AUTHZ_MODE: "jwks"
+  JSL_AUTHZ_ISSUER: "http://auth.localtest.me:8080/realms/jsl"
+  JSL_AUTHZ_AUDIENCE: "jsl-gateway"
+  JSL_AUTHZ_TENANT_CLAIM: "tenant_id"
+  JSL_AUTHZ_BACKCHANNEL_BASE: "http://keycloak.keycloak.svc.cluster.local/realms/jsl"
 
 existingSecret: "tenant-bc-secrets"
 autoscaling:

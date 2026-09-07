@@ -1,0 +1,27 @@
+# ArgoCD Application：tenant-portal（M20 租户门户，Next.js 15 standalone）。
+# 镜像暂本地构建（jsl/tenant-portal:v0.0.1 + kind load）；CI 构建推送 GHCR 留后续。
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tenant-portal
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jaculi/Hello-World.git
+    targetRevision: master
+    path: deploy/helm/tenant-portal
+    helm:
+      valueFiles:
+        - ../../../deploy/dev/tenant-portal-dev-values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

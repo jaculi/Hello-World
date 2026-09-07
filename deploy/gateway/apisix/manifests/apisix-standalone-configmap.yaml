@@ -1,6 +1,9 @@
-# APISIX standalone 配置 ConfigMap（M18）。
+# APISIX standalone 配置 ConfigMap（M18 + M20 hostname 分流）。
 # 键名与挂载 subPath 对应 deploy/gateway/apisix/{config,apisix}.yaml；
 # 修改路由后由 ArgoCD 同步 + APISIX standalone 文件热加载。
+#
+# M20：双 hostname 路由（portal.localtest.me → 门户，auth.localtest.me → Keycloak/API）。
+# compose 侧（deploy/gateway/apisix/apisix.yaml）不分 hostname，仍端口 9080 路径分流。
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -25,20 +28,42 @@ data:
   # 与 compose 网络的短名不同；集群侧路由在此维护。
   apisix.yaml: |
     routes:
+      - id: portal
+        uri: /*
+        hosts: ["portal.localtest.me"]
+        plugins:
+          proxy-rewrite:
+            # M20 修正：APISIX 默认 X-Forwarded-Host 取 $host（去掉端口），
+            # 与浏览器 Origin 头（portal.localtest.me:8080）不匹配，
+            # 触发 Next.js Server Actions "Invalid Server Actions request" 中止。
+            # 改用 $http_host（保留端口）保证二者一致。
+            headers:
+              set:
+                X-Forwarded-Host: "$http_host"
+        upstream:
+          type: roundrobin
+          nodes:
+            "tenant-portal.platform.svc.cluster.local:3000": 1
+
       - id: keycloak-realms
         uri: /realms/*
+        hosts: ["auth.localtest.me"]
         upstream:
           type: roundrobin
           nodes:
             "keycloak.keycloak.svc.cluster.local:80": 1
+
       - id: keycloak-resources
         uri: /resources/*
+        hosts: ["auth.localtest.me"]
         upstream:
           type: roundrobin
           nodes:
             "keycloak.keycloak.svc.cluster.local:80": 1
+
       - id: platform-api
         uri: /api/*
+        hosts: ["auth.localtest.me"]
         plugins:
           proxy-rewrite:
             regex_uri: ["^/api/(.*)", "/$1"]
