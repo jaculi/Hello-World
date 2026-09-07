@@ -1,0 +1,37 @@
+# 禁止 NodePort/LoadBalancer Service（M16 / BP-05 网络安全）
+#
+# 禁止 platform 命名空间的 Service 使用 NodePort 或 LoadBalancer 类型。
+# 对外服务统一经 Ingress/APISIX 网关暴露，防止绕过 WAF/限流/认证。
+# ClusterIP 用于内部服务发现，Ingress 用于外部路由。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-node-port-lb-service
+  annotations:
+    policies.kyverno.io/title: 禁止 NodePort/LoadBalancer Service
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Service
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["services"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.spec.?type.orValue('ClusterIP') == 'ClusterIP'
+      message: "platform 命名空间禁止 NodePort/LoadBalancer Service，对外须经 Ingress/APISIX 网关暴露"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true

@@ -1,4 +1,4 @@
-# deploy/kyverno/ —— 准入控制（M15 RBAC 最小权限·十七层纵深防御）
+# deploy/kyverno/ —— 准入控制（M16 服务暴露与存储治理·二十层纵深防御）
 
 > 依据：[BP-05 §7.1.2 供应链安全](../blueprint/05-security-architecture.md)（包签名验证、镜像扫描、SBOM）、BP-05 默认拒绝 + 纵深防御原则、BP-04 资源治理与制品可追溯
 > 这是 CI 侧 cosign keyless 签名（`.github/workflows/ci.yml` ⑤ 制品 job）的**运行时消费端**。
@@ -20,18 +20,21 @@
 9. **禁止 root 用户**（`disallow-run-as-root`，`ValidatingPolicy`）：容器 `runAsUser` 不能为 0，作为 PSS `runAsNonRoot` 的纵深防御补充。
 10. **禁止未屏蔽 procMount**（`require-default-proc-mount`，`ValidatingPolicy`）：容器 `procMount` 必须为 `Default`，禁止 `Unmasked` 暴露宿主机 /proc。
 11. **禁止 hostAlias**（`disallow-host-aliases`，`ValidatingPolicy`）：禁止 Pod 设置 `spec.hostAliases`，防止 DNS 劫持与绕过集群服务发现。
+12. **禁止 NodePort/LB Service**（`disallow-node-port-lb-service`，`ValidatingPolicy`）：禁止 platform 命名空间的 Service 使用 NodePort 或 LoadBalancer 类型，对外服务统一经 Ingress/APISIX 网关暴露。
+13. **强制 emptyDir 大小限制**（`require-emptydir-size-limit`，`ValidatingPolicy`）：emptyDir 卷必须设置 `sizeLimit`，防止临时存储无限制增长导致节点磁盘耗尽。
+14. **强制镜像拉取策略 Always**（`require-always-pull-policy`，`ValidatingPolicy`）：容器 `imagePullPolicy` 必须为 `Always`，确保从仓库拉取最新签名信息（经签名策略 `mutateDigest` 转 digest 后自动设为 IfNotPresent）。
 
 ### RBAC 级（全集群）
 
-12. **禁止 cluster-admin 绑定**（`disallow-cluster-admin-binding`，`ValidatingPolicy`）：禁止 ClusterRoleBinding/RoleBinding 绑定到 cluster-admin 角色，防止权限过度授予。
-13. **禁止通配符 RBAC**（`disallow-wildcard-rbac`，`ValidatingPolicy`）：禁止 Role/ClusterRole 中 verbs/resources/apiGroups 含 `*`，须显式声明最小权限。
-14. **禁止 default SA**（`disallow-default-service-account`，`ValidatingPolicy`）：platform 命名空间 Pod 禁止使用 default ServiceAccount，须显式指定专用 SA。
+15. **禁止 cluster-admin 绑定**（`disallow-cluster-admin-binding`，`ValidatingPolicy`）：禁止 ClusterRoleBinding/RoleBinding 绑定到 cluster-admin 角色，防止权限过度授予。
+16. **禁止通配符 RBAC**（`disallow-wildcard-rbac`，`ValidatingPolicy`）：禁止 Role/ClusterRole 中 verbs/resources/apiGroups 含 `*`，须显式声明最小权限。
+17. **禁止 default SA**（`disallow-default-service-account`，`ValidatingPolicy`）：platform 命名空间 Pod 禁止使用 default ServiceAccount，须显式指定专用 SA。
 
 ### Namespace 级（全集群）
 
-15. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
-16. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
-17. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
+18. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
+19. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
+20. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
 
 **策略例外**：默认拒绝，确需豁免时经安全评审后创建 `PolicyException`（仅允许在 kyverno 命名空间创建，由平台管理员统一管理），须设 `expiresAt` 到期自动失效。
 
@@ -56,6 +59,9 @@ deploy/kyverno/
 │   ├── disallow-run-as-root.yaml             # ValidatingPolicy：禁止 root 用户运行
 │   ├── require-default-proc-mount.yaml       # ValidatingPolicy：禁止未屏蔽 procMount
 │   ├── disallow-host-aliases.yaml            # ValidatingPolicy：禁止 hostAlias
+│   ├── disallow-node-port-lb-service.yaml    # ValidatingPolicy：禁止 NodePort/LB Service
+│   ├── require-emptydir-size-limit.yaml      # ValidatingPolicy：强制 emptyDir 大小限制
+│   ├── require-always-pull-policy.yaml       # ValidatingPolicy：强制镜像拉取策略 Always
 │   ├── disallow-cluster-admin-binding.yaml   # ValidatingPolicy：禁止 cluster-admin 绑定
 │   ├── disallow-wildcard-rbac.yaml           # ValidatingPolicy：禁止通配符 RBAC 权限
 │   ├── disallow-default-service-account.yaml # ValidatingPolicy：禁止使用 default SA

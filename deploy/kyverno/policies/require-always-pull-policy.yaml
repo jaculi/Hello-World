@@ -1,0 +1,46 @@
+# 强制镜像拉取策略 Always（M16 / BP-04 §6 制品可追溯）
+#
+# 强制 platform 命名空间的 Pod 镜像拉取策略为 Always。
+# 配合签名校验策略的 mutateDigest，确保每次 Pod 创建时从仓库拉取
+# 最新签名信息，而非使用节点缓存的旧镜像（可能签名已过期或撤销）。
+# 注意：经签名策略 mutateDigest 转为 digest 形式后，imagePullPolicy 会被
+# 自动设为 IfNotPresent（digest 不可变），此策略在标签阶段生效。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-always-pull-policy
+  annotations:
+    policies.kyverno.io/title: 强制镜像拉取策略 Always
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.spec.containers.all(c,
+          c.?imagePullPolicy.orValue('Always') == 'Always'
+        )
+      message: "容器 imagePullPolicy 必须为 Always，确保从仓库拉取最新签名信息"
+    - expression: >-
+        (object.spec.?initContainers.orValue([])).all(c,
+          c.?imagePullPolicy.orValue('Always') == 'Always'
+        )
+      message: "初始化容器 imagePullPolicy 必须为 Always"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true
