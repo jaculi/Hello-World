@@ -26,9 +26,9 @@ echo "=== 1) 无令牌访问 /api（预期 401）==="
 c1=$(code "$GATEWAY/api/v1/tenants/$TENANT_ULID")
 echo "HTTP $c1"; [ "$c1" = "401" ] || { echo "FAIL 1"; exit 1; }
 
-echo "=== 2) 合法令牌（预期认证链通过；业务 404 证明已过 authz/租户头注入）==="
+echo "=== 2) 合法令牌（M19+ 已 seed demo 租户，预期 200；M18 无 seed 时预期 404）==="
 c2=$(code "$GATEWAY/api/v1/tenants/$TENANT_ULID" -H "Authorization: Bearer $TOKEN")
-echo "HTTP $c2"; [ "$c2" = "404" ] || { echo "FAIL 2 (expect 404 not_found after auth)"; exit 1; }
+echo "HTTP $c2"; [ "$c2" = "200" ] || [ "$c2" = "404" ] || { echo "FAIL 2 (expect 200 or 404 after auth)"; exit 1; }
 
 echo "=== 3) 篡改签名令牌（预期 401）==="
 c3=$(code "$GATEWAY/api/v1/tenants/$TENANT_ULID" -H "Authorization: Bearer ${TOKEN}xx")
