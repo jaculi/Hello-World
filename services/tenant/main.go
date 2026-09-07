@@ -166,11 +166,15 @@ func buildDeps(ctx context.Context, logger *slog.Logger) deps {
 		os.Exit(1)
 	}
 	logger.Warn("JSL_DB_DSN not set — running with in-memory stores (development only)")
+	tenants := biz.NewMemTenantRepo()
+	orgs := biz.NewMemOrgRepo()
+	sites := biz.NewMemSiteRepo()
+	seedDemoTenant(ctx, logger, tenants, orgs, sites)
 	return deps{
 		tx:      biz.MemTransactor{},
-		tenants: biz.NewMemTenantRepo(),
-		orgs:    biz.NewMemOrgRepo(),
-		sites:   biz.NewMemSiteRepo(),
+		tenants: tenants,
+		orgs:    orgs,
+		sites:   sites,
 		plans: biz.NewMemPlanRepo(
 			biz.Plan{ID: "plan-free", Name: "Free", DefaultIsolation: biz.IsolationT3, Active: true},
 			biz.Plan{ID: "plan-pro", Name: "Pro", DefaultIsolation: biz.IsolationT3, Active: true},
@@ -178,6 +182,41 @@ func buildDeps(ctx context.Context, logger *slog.Logger) deps {
 		events: &biz.MemEventPublisher{},
 		close:  func() {},
 	}
+}
+
+// demoTenantID 与 deploy/identity/keycloak/jsl-realm.json demo-admin 用户的 tenant_id 一致。
+// dev 内存模式 seed 该租户 + 根组织 + 根站点 + 示例子站点，使浏览器登录后端到端可见。
+const demoTenantID = "01JSM18DEM0TENANT000000001"
+
+// seedDemoTenant 仅在 dev 内存模式调用（M19）：预填与 Keycloak demo-admin 令牌
+// tenant_id 一致的租户、根组织、根站点与一个示例子站点，使门户浏览器流程可读。
+func seedDemoTenant(ctx context.Context, logger *slog.Logger, tenants biz.TenantRepo, orgs biz.OrgRepo, sites biz.SiteRepo) {
+	now := time.Now().UTC()
+	au := biz.Audit{CreatedAt: now, CreatedBy: "system:seed", UpdatedAt: now, UpdatedBy: "system:seed", Version: 1}
+	t := &biz.Tenant{
+		ID: demoTenantID, Name: "demo", DisplayName: "Demo Tenant",
+		Status: biz.TenantStatusActive, Isolation: biz.IsolationT3,
+		PlanID: "plan-free", HomeRegion: "cn-north-1", Audit: au,
+	}
+	if err := tenants.Insert(ctx, nil, t, &biz.Subscription{
+		ID: "01JSM18DEM0SUB0000000000001", TenantID: demoTenantID, PlanID: "plan-free", Status: "active", Audit: au,
+	}, nil); err != nil {
+		logger.Warn("seed demo tenant: insert tenant failed (may already exist)", "err", err)
+		return
+	}
+	rootOrg := &biz.Organization{ID: "01JSM18DEM0ORG0000000000001", TenantID: demoTenantID, Name: "root", DisplayName: "根组织", Audit: au}
+	rootSite := &biz.Site{ID: "01JSM18DEM0SITE0000000000001", TenantID: demoTenantID, Name: "root", DisplayName: "根站点", SiteType: "root", Audit: au}
+	factoryA := &biz.Site{ID: "01JSM18DEM0SITE0000000000002", TenantID: demoTenantID, ParentSiteID: rootSite.ID, Name: "factory-a", DisplayName: "A 号厂区", SiteType: "factory", Audit: au}
+	for _, s := range []*biz.Site{rootSite, factoryA} {
+		if err := sites.Insert(ctx, nil, s); err != nil {
+			logger.Warn("seed demo site: insert failed (may already exist)", "id", s.ID, "err", err)
+		}
+	}
+	if err := orgs.Insert(ctx, nil, rootOrg); err != nil {
+		logger.Warn("seed demo org: insert failed (may already exist)", "err", err)
+	}
+	logger.Info("seed: demo tenant provisioned", "tenant_id", demoTenantID,
+		"site_ids", []string{rootSite.ID, factoryA.ID})
 }
 
 func envOr(key, fallback string) string {

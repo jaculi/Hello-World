@@ -80,7 +80,7 @@ func baseClaims(issuer string) map[string]any {
 
 func TestJWKSVerifier_Valid(t *testing.T) {
 	issuer, key := newTestOIDC(t)
-	v, err := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "")
+	v, err := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "", "")
 	if err != nil {
 		t.Fatalf("new verifier: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestJWKSVerifier_WrongSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "")
+	v, err := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "", "")
 	if err != nil {
 		t.Fatalf("new verifier: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestJWKSVerifier_WrongSignature(t *testing.T) {
 
 func TestJWKSVerifier_Expired(t *testing.T) {
 	issuer, key := newTestOIDC(t)
-	v, _ := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "")
+	v, _ := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "", "")
 	claims := baseClaims(issuer)
 	claims["exp"] = time.Now().Add(-time.Hour).Unix()
 	if _, err := v.Verify(context.Background(), signToken(t, key, claims)); err == nil {
@@ -132,7 +132,7 @@ func TestJWKSVerifier_Expired(t *testing.T) {
 
 func TestJWKSVerifier_WrongIssuer(t *testing.T) {
 	issuer, key := newTestOIDC(t)
-	v, _ := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "")
+	v, _ := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "", "")
 	claims := baseClaims(issuer)
 	claims["iss"] = "http://evil.example.com/realms/jsl"
 	if _, err := v.Verify(context.Background(), signToken(t, key, claims)); err == nil {
@@ -142,7 +142,7 @@ func TestJWKSVerifier_WrongIssuer(t *testing.T) {
 
 func TestJWKSVerifier_WrongAudience(t *testing.T) {
 	issuer, key := newTestOIDC(t)
-	v, _ := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "")
+	v, _ := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "", "")
 	claims := baseClaims(issuer)
 	claims["aud"] = []string{"other-client"}
 	if _, err := v.Verify(context.Background(), signToken(t, key, claims)); err == nil {
@@ -152,7 +152,7 @@ func TestJWKSVerifier_WrongAudience(t *testing.T) {
 
 func TestJWKSVerifier_MissingTenantClaim(t *testing.T) {
 	issuer, key := newTestOIDC(t)
-	v, _ := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "")
+	v, _ := NewJWKSVerifier(context.Background(), issuer, "jsl-gateway", "", "")
 	claims := baseClaims(issuer)
 	delete(claims, "tenant_id")
 	if _, err := v.Verify(context.Background(), signToken(t, key, claims)); err == nil {
@@ -161,8 +161,56 @@ func TestJWKSVerifier_MissingTenantClaim(t *testing.T) {
 }
 
 func TestJWKSVerifier_DiscoveryUnavailable(t *testing.T) {
-	if _, err := NewJWKSVerifier(context.Background(), "http://127.0.0.1:1/realms/none", "c", ""); err == nil {
+	if _, err := NewJWKSVerifier(context.Background(), "http://127.0.0.1:1/realms/none", "c", "", ""); err == nil {
 		t.Fatal("discovery failure must return error")
+	}
+}
+
+// TestJWKSVerifier_BackchannelRewrite 验证 M19 backchannel 重写：
+// issuer 是浏览器面不可达 URL（http://127.0.0.1:1/realms/jsl），backchannel 指向真实
+// httptest 服务；go-oidc discovery+JWKS 抓取走重写后 URL，iss 校验仍用原 issuer。
+func TestJWKSVerifier_BackchannelRewrite(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+	// 不可达 issuer（模拟容器内 http://localhost:9080/realms/jsl）
+	unreachableIssuer := "http://127.0.0.1:1/realms/jsl"
+	mux := http.NewServeMux()
+	writeJSON := func(w http.ResponseWriter, v any) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v)
+	}
+	mux.HandleFunc("/realms/jsl/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer":                                unreachableIssuer,
+			"jwks_uri":                              unreachableIssuer + "/certs",
+			"authorization_endpoint":                unreachableIssuer + "/auth",
+			"token_endpoint":                        unreachableIssuer + "/token",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		})
+	})
+	mux.HandleFunc("/realms/jsl/certs", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{
+			Key: &key.PublicKey, KeyID: "test", Algorithm: "RS256", Use: "sig",
+		}}})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	v, err := NewJWKSVerifier(context.Background(), unreachableIssuer, "jsl-gateway", "", srv.URL+"/realms/jsl")
+	if err != nil {
+		t.Fatalf("new verifier with backchannel: %v", err)
+	}
+	if _, err := v.Verify(context.Background(), signToken(t, key, baseClaims(unreachableIssuer))); err != nil {
+		t.Fatalf("verify via backchannel rewrite: %v", err)
+	}
+}
+
+// TestJWKSVerifier_BackchannelInvalidBase 验证 backchannel 基址非法时初始化失败。
+func TestJWKSVerifier_BackchannelInvalidBase(t *testing.T) {
+	if _, err := NewJWKSVerifier(context.Background(), "http://localhost:9080/realms/jsl", "c", "", "://no-scheme"); err == nil {
+		t.Fatal("invalid backchannel base must be rejected")
 	}
 }
 

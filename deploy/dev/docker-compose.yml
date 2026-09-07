@@ -50,6 +50,10 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HTTP_ENABLED: "true"
+      # M19：锁定浏览器面 hostname（全 URL），使所有令牌 iss 固定为 http://localhost:9080/realms/jsl，
+      # 与 BC 验签 issuer / 门户 Auth.js discovery 一致（经 APISIX :9080 访问）。
+      # Keycloak 26 接受全 URL 或纯 hostname；"localhost:9080" 二者皆非会报错。
+      KC_HOSTNAME: "http://localhost:9080"
       KC_HOSTNAME_STRICT: "false"
       KC_HEALTH_ENABLED: "true"
     ports:
@@ -81,10 +85,13 @@ services:
       context: ../..
       dockerfile: services/tenant/Dockerfile
     environment:
-      JSL_ENV: "dev" # 无 JSL_DB_DSN 走内存替身（M18 仅验证认证链路）
+      JSL_ENV: "dev" # 无 JSL_DB_DSN 走内存替身；M19 seed demo 租户
       JSL_KAFKA_BROKERS: ""
       JSL_AUTHZ_MODE: "jwks"
-      JSL_AUTHZ_ISSUER: "http://keycloak:8080/realms/jsl"
+      # M19：iss 用浏览器面 URL（与令牌 iss 一致），backchannel 直连 Keycloak 内部端口
+      # （APISIX 在 tenant-bc 之后启动，依赖顺序导致 apisix 主机名不可达）
+      JSL_AUTHZ_ISSUER: "http://localhost:9080/realms/jsl"
+      JSL_AUTHZ_BACKCHANNEL_BASE: "http://keycloak:8080/realms/jsl"
       JSL_AUTHZ_AUDIENCE: "jsl-gateway"
       JSL_AUTHZ_TENANT_CLAIM: "tenant_id"
       OTEL_EXPORTER_OTLP_ENDPOINT: ""

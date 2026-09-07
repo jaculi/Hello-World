@@ -36,7 +36,11 @@ deploy/
 
 - **制品**：CI 构建 distroless 镜像 → 推 GHCR → cosign keyless 签名（Fulcio + Rekor）
 - **准入**：Kyverno CEL 策略校验 cosign 签名（issuer = GitHub Actions，subject = 本仓），通过后 pin digest
-- **认证**：Keycloak 签发 OIDC 令牌 → APISIX openid-connect bearer 验签 + Lua 注入租户头 → BC JWKS 二次验签（M18）
+- **认证（M18 API 网关模式）**：服务端/CI 持密码模式令牌 → APISIX `/api/*` openid-connect bearer 验签 + Lua 注入 `X-Tenant-Id` → BC JWKS 二次验签
+- **认证（M19 浏览器门户模式）**：浏览器 → Keycloak code 流（经 APISIX `/realms/*` 代理）→ 门户 BFF（Next.js，`web/tenant-portal/`）持 access_token 调 APISIX `/api/*` → 同一验签链；令牌存 httpOnly 加密 cookie，不入前端 JS
+- **issuer 对齐**：dev 锁定 `KC_HOSTNAME=http://localhost:9080`（全 URL），所有令牌 iss=`http://localhost:9080/realms/jsl`；BC 经 `JSL_AUTHZ_BACKCHANNEL_BASE` 把 discovery/JWKS 抓取重写为集群内 `http://keycloak:8080/realms/jsl`（直连 Keycloak，避免 APISIX 启动顺序依赖），iss 校验仍用浏览器面 URL
 - **GitOps**：ArgoCD 同步 Kyverno、策略集、身份/网关、各 BC
 
 各 BC 的 Helm Chart 随服务放在 `services/<bc>/deploy/helm/<bc>/`，GitOps 目录只引用制品版本（Tag = Chart appVersion 策略，BP-04 §6）。
+
+> 门户前端在仓库根 `web/tenant-portal/`（不在 deploy/），dev 跑宿主 `npm run dev`，生产/K8s 用其 Dockerfile（standalone 输出）经 Ingress 统一 hostname。
