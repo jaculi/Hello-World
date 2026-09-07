@@ -1,0 +1,35 @@
+# ArgoCD Application：APISIX 网关（M18，BP-04 选型锁定）。
+# 多源：Helm chart（charts.apiseven.com）+ 本仓 values + standalone 路由 ConfigMap。
+# 注意：Namespace 清单（deploy/gitops/namespaces/identity.yaml）需随 bootstrap 先应用。
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: apisix
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/jaculi/Hello-World.git
+      targetRevision: master
+      ref: jsl
+    - repoURL: https://charts.apiseven.com
+      chart: apisix
+      targetRevision: "2.15.*"
+      helm:
+        valueFiles:
+          - $jsl/deploy/gateway/apisix/values.yaml
+    - repoURL: https://github.com/jaculi/Hello-World.git
+      targetRevision: master
+      path: deploy/gateway/apisix/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: apisix
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

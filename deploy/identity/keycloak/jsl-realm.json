@@ -1,0 +1,99 @@
+{
+  "realm": "jsl",
+  "enabled": true,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      {
+        "name": "TENANT_ADMIN",
+        "description": "租户管理员（demo）"
+      },
+      {
+        "name": "PLATFORM_ADMIN",
+        "description": "平台运营管理员"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "jsl-gateway",
+      "name": "JSL API Gateway (APISIX)",
+      "enabled": true,
+      "description": "APISIX 网关 OIDC 客户端；M19 门户 BFF 复用",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "dev-gateway-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:9080/*",
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "tenant-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "multivalued": "false"
+          }
+        },
+        {
+          "name": "client-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "jsl-gateway",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "lightweight.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "demo-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "demo-admin@example.com",
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant_id": [
+          "01JSM18DEM0TENANT000000001"
+        ]
+      },
+      "realmRoles": [
+        "TENANT_ADMIN"
+      ]
+    }
+  ]
+}

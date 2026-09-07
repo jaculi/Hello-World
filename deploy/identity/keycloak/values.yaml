@@ -1,0 +1,44 @@
+# Keycloak Helm values（M18 dev 环境；生产硬化随 BC-P2 IAM 里程碑）。
+# Chart: keycloak（https://keycloak.github.io/helm-charts），appVersion 对齐 26.1。
+# 注意：realm 导入的 ConfigMap 与 Namespace 清单见同目录 manifests/，
+#       由 ArgoCD Application（deploy/gitops/argocd/keycloak.yaml）多源同步。
+image:
+  tag: "26.1"
+
+# dev 管理员（生产必须改密并走 Secret 外部化）
+auth:
+  adminUser: admin
+  adminPassword: admin
+
+# dev 用内置 PostgreSQL subchart（生产使用外部 PG 高可用）
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: keycloak-dev
+    password: keycloak-dev
+
+# dev 模式 + realm 自动导入；生产使用 start --optimized 并由 BC-P2 管理 realm 生命周期
+keycloak:
+  args:
+    - "start-dev"
+    - "--import-realm"
+  extraEnvVars:
+    - name: KC_HOSTNAME_STRICT
+      value: "false"
+    - name: KC_HTTP_ENABLED
+      value: "true"
+    - name: KC_HEALTH_ENABLED
+      value: "true"
+
+# realm 引导声明挂载（jsl-realm.json 经 manifests/realm-configmap.yaml 注入）
+extraVolumes: |
+  - name: realm-import
+    configMap:
+      name: keycloak-realm-import
+extraVolumeMounts: |
+  - name: realm-import
+    mountPath: /opt/keycloak/data/import
+    readOnly: true
+
+# dev 单副本（M17 多副本策略仅作用 platform 命名空间，keycloak ns 不受约束）
+replicas: 1

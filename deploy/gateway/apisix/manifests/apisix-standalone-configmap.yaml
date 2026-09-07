@@ -1,0 +1,75 @@
+# APISIX standalone 配置 ConfigMap（M18）。
+# 键名与挂载 subPath 对应 deploy/gateway/apisix/{config,apisix}.yaml；
+# 修改路由后由 ArgoCD 同步 + APISIX standalone 文件热加载。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apisix-standalone-config
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+data:
+  config.yaml: |
+    deployment:
+      role: data_plane
+      role_data_plane:
+        config_provider: yaml
+    apisix:
+      node_listen: 9080
+    nginx:
+      worker_processes: 2
+    plugins:
+      - openid-connect
+      - serverless-pre-function
+      - proxy-rewrite
+  # 注意：upstream 主机名为集群内 Service DNS（keycloak.keycloak.svc / tenant-bc.platform.svc），
+  # 与 compose 网络的短名不同；集群侧路由在此维护。
+  apisix.yaml: |
+    routes:
+      - id: keycloak-realms
+        uri: /realms/*
+        upstream:
+          type: roundrobin
+          nodes:
+            "keycloak.keycloak.svc.cluster.local:80": 1
+      - id: keycloak-resources
+        uri: /resources/*
+        upstream:
+          type: roundrobin
+          nodes:
+            "keycloak.keycloak.svc.cluster.local:80": 1
+      - id: platform-api
+        uri: /api/*
+        plugins:
+          proxy-rewrite:
+            regex_uri: ["^/api/(.*)", "/$1"]
+          openid-connect:
+            discovery: http://keycloak.keycloak.svc.cluster.local/realms/jsl/.well-known/openid-configuration
+            client_id: jsl-gateway
+            client_secret: dev-gateway-secret
+            bearer_only: true
+            realm: jsl
+            set_access_token_header: true
+          serverless-pre-function:
+            phase: rewrite
+            functions:
+              - |
+                return function(conf, ctx)
+                  local core = require("apisix.core")
+                  local auth = core.request.header(ctx, "Authorization")
+                  if not auth then return end
+                  local token = auth:gsub("^Bearer%s+", "")
+                  local payload = token:match("^[^.]+%.([^.]+)%.[^.]+$")
+                  if not payload then return end
+                  local b64 = require("ngx.base64")
+                  local ok, decoded = pcall(b64.decode_base64url, payload)
+                  if not ok or not decoded then return end
+                  local okj, claims = pcall(core.json.decode, decoded)
+                  if okj and claims and claims.tenant_id then
+                    core.request.set_header(ctx, "X-Tenant-Id", claims.tenant_id)
+                  end
+                end
+        upstream:
+          type: roundrobin
+          nodes:
+            "tenant-bc.platform.svc.cluster.local:8000": 1
+    #END

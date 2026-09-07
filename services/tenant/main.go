@@ -58,13 +58,19 @@ func main() {
 
 	logger := observability.NewLogger(cfg)
 
-	// authz 桩：本地 HMAC 验签；BC-P2 落地后替换为 JWKS Verifier（接口不变）
-	secret := os.Getenv("JSL_AUTHZ_JWT_SECRET")
-	if secret == "" {
-		logger.Warn("JSL_AUTHZ_JWT_SECRET not set, using dev default secret (local development only)")
-		secret = "dev-secret-change-me"
+	// authz：按 JSL_AUTHZ_MODE 装配验签器
+	//   stub（默认）：本地 HMAC 桩（dev/CI/单测）
+	//   jwks：OIDC JWKS 远程验签（Keycloak，M18）
+	verifier, err := authz.NewVerifierFromEnv(ctx)
+	if err != nil {
+		logger.Error("authz verifier init failed", "err", err)
+		os.Exit(1)
 	}
-	verifier := authz.NewStubVerifier([]byte(secret))
+	if os.Getenv("JSL_AUTHZ_MODE") == "jwks" {
+		logger.Info("authz: oidc jwks verifier", "issuer", os.Getenv("JSL_AUTHZ_ISSUER"))
+	} else if os.Getenv("JSL_AUTHZ_JWT_SECRET") == "" {
+		logger.Warn("JSL_AUTHZ_JWT_SECRET not set, using dev default secret (local development only)")
+	}
 
 	// 审计：M1 结构化日志 Sink；事件形态随 BC-P5 审计上下文接入
 	emitter := audit.NewEmitter(audit.NewLogSink(logger))

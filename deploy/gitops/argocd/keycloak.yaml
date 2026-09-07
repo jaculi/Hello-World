@@ -1,0 +1,34 @@
+# ArgoCD Application：Keycloak（M18 OIDC 身份服务，BP-04 选型锁定）。
+# 多源：Helm chart（官方仓库）+ 本仓 values + realm ConfigMap/Namespace 清单。
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/jaculi/Hello-World.git
+      targetRevision: master
+      ref: jsl
+    - repoURL: https://keycloak.github.io/helm-charts
+      chart: keycloak
+      targetRevision: "26.1.*"
+      helm:
+        valueFiles:
+          - $jsl/deploy/identity/keycloak/values.yaml
+    - repoURL: https://github.com/jaculi/Hello-World.git
+      targetRevision: master
+      path: deploy/identity/keycloak/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keycloak
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

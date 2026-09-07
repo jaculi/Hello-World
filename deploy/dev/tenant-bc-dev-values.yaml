@@ -14,6 +14,13 @@ env:
   JSL_KAFKA_TOPIC: "platform.events.v1"
   JSL_OUTBOX_INTERVAL: "2s"
   OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  # ── M18 认证（默认 stub 本地 HMAC；接入 Keycloak 时切换 jwks）──
+  # JWKS 模式（集群内 issuer 经 APISIX 入口对齐，见 deploy/gateway/README.md）：
+  # JSL_AUTHZ_MODE: "jwks"
+  # JSL_AUTHZ_ISSUER: "http://localhost:9080/realms/jsl"
+  # JSL_AUTHZ_AUDIENCE: "jsl-gateway"
+  # JSL_AUTHZ_TENANT_CLAIM: "tenant_id"
+  JSL_AUTHZ_MODE: "stub"
 
 existingSecret: "tenant-bc-secrets"
 autoscaling:

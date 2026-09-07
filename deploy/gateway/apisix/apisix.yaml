@@ -1,0 +1,74 @@
+# APISIX standalone 路由声明（M18）。
+# 必须以 #END 结尾；compose 与 Helm 共用本文件。
+#
+# 链路：浏览器/客户端 → APISIX :9080
+#   /realms/*、/resources/* → Keycloak（登录页/发现端点/令牌，浏览器可达）
+#   /api/*                  → OIDC bearer 验签 → Lua 注入 x-tenant-id → tenant-bc:8000
+#
+# 注：M18 /api 使用 bearer_only 模式（API 网关模式，无令牌即 401）；
+# 浏览器 code 流跳转登录由 M19 门户 BFF 承接（前端拿到令牌后以 Bearer 调 /api）。
+routes:
+  - id: keycloak-realms
+    name: keycloak-realms
+    uri: /realms/*
+    upstream:
+      type: roundrobin
+      nodes:
+        "keycloak:8080": 1
+
+  - id: keycloak-resources
+    name: keycloak-resources
+    uri: /resources/*
+    upstream:
+      type: roundrobin
+      nodes:
+        "keycloak:8080": 1
+
+  - id: platform-api
+    name: platform-api
+    uri: /api/*
+    plugins:
+      proxy-rewrite:
+        # /api/v1/tenants → /v1/tenants（BC 的 kratos HTTP 路由前缀为 /v1）
+        regex_uri: ["^/api/(.*)", "/$1"]
+      openid-connect:
+        discovery: http://keycloak:8080/realms/jsl/.well-known/openid-configuration
+        client_id: jsl-gateway
+        client_secret: dev-gateway-secret
+        bearer_only: true
+        realm: jsl
+        # 验签后把访问令牌透传给上游（X-Access-Token），供审计/调试
+        set_access_token_header: true
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - |
+            return function(conf, ctx)
+              local core = require("apisix.core")
+              local auth = core.request.header(ctx, "Authorization")
+              if not auth then
+                return
+              end
+              local token = auth:gsub("^Bearer%s+", "")
+              -- 取 JWT 第二段（payload）
+              local payload = token:match("^[^.]+%.([^.]+)%.[^.]+$")
+              if not payload then
+                return
+              end
+              local b64 = require("ngx.base64")
+              local ok, decoded = pcall(b64.decode_base64url, payload)
+              if not ok or not decoded then
+                return
+              end
+              local okj, claims = pcall(core.json.decode, decoded)
+              if okj and claims and claims.tenant_id then
+                -- 租户上下文头（tenantcontext 中间件 fail-closed 必需）；
+                -- 网关只解码不验签，签名已由 openid-connect 插件校验
+                core.request.set_header(ctx, "X-Tenant-Id", claims.tenant_id)
+              end
+            end
+    upstream:
+      type: roundrobin
+      nodes:
+        "tenant-bc:8000": 1
+#END

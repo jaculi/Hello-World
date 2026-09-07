@@ -1,0 +1,33 @@
+# APISIX Helm values（M18 dev）：standalone 声明式路由（无 etcd）。
+# Chart: apisix（https://charts.apiseven.com），appVersion 对齐 3.11。
+# 路由/插件声明经 manifests/apisix-standalone-configmap.yaml 注入。
+gateway:
+  type: NodePort
+  ingress:
+    enabled: false
+  tls:
+    enabled: false
+  # 覆盖 conf/config.yaml 与 conf/apisix.yaml（standalone）
+  extraVolumes:
+    - name: standalone-config
+      configMap:
+        name: apisix-standalone-config
+  extraVolumeMounts:
+    - name: standalone-config
+      mountPath: /usr/local/apisix/conf/config.yaml
+      subPath: config.yaml
+    - name: standalone-config
+      mountPath: /usr/local/apisix/conf/apisix.yaml
+      subPath: apisix.yaml
+
+dashboard:
+  enabled: false
+
+# 关闭 etcd（standalone yaml 配置源）
+etcd:
+  enabled: false
+
+plugins:
+  - openid-connect
+  - serverless-pre-function
+  - proxy-rewrite

@@ -1,0 +1,16 @@
+# APISIX 最小配置（M18）：standalone 声明式路由（无 etcd 依赖）。
+# compose 与 Helm 均挂载本文件到 /usr/local/apisix/conf/config.yaml；
+# 路由声明见同目录 apisix.yaml（挂载到 /usr/local/apisix/conf/apisix.yaml）。
+deployment:
+  role: data_plane
+  role_data_plane:
+    config_provider: yaml
+apisix:
+  node_listen: 9080
+nginx:
+  worker_processes: 1
+plugins:
+  # 显式启用 M18 使用的插件（其余取 config-default 默认集）
+  - openid-connect
+  - serverless-pre-function
+  - proxy-rewrite

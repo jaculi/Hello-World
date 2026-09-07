@@ -1,4 +1,5 @@
-# BC-P1 dev 依赖栈（步 18/19/22）：PostgreSQL（RLS）+ Kafka（KRaft 单节点）
+# BC-P1 dev 依赖栈 + 身份基础设施（M18）：
+#   PostgreSQL（RLS）、Kafka（KRaft 单节点）、Keycloak（OIDC）、APISIX（网关）、tenant-bc
 # 用法：docker compose -f deploy/dev/docker-compose.yml up -d
 name: jsl-tenant-dev
 
@@ -40,3 +41,53 @@ services:
       interval: 5s
       timeout: 10s
       retries: 30
+
+  # ── M18 身份基础设施 ─────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8081:8080" # 宿主 8081：Keycloak 管理台/发现端点
+    volumes:
+      - ../identity/keycloak/jsl-realm.json:/opt/keycloak/data/import/jsl-realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": *\"UP\"'"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 90s
+
+  apisix:
+    image: apache/apisix:3.11.0-debian
+    volumes:
+      - ../gateway/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ../gateway/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+    ports:
+      - "9080:9080" # 网关统一入口：/api/* 走 OIDC，/realms/* 代理 Keycloak
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      tenant-bc:
+        condition: service_started
+
+  tenant-bc:
+    build:
+      context: ../..
+      dockerfile: services/tenant/Dockerfile
+    environment:
+      JSL_ENV: "dev" # 无 JSL_DB_DSN 走内存替身（M18 仅验证认证链路）
+      JSL_KAFKA_BROKERS: ""
+      JSL_AUTHZ_MODE: "jwks"
+      JSL_AUTHZ_ISSUER: "http://keycloak:8080/realms/jsl"
+      JSL_AUTHZ_AUDIENCE: "jsl-gateway"
+      JSL_AUTHZ_TENANT_CLAIM: "tenant_id"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+    depends_on:
+      keycloak:
+        condition: service_healthy
