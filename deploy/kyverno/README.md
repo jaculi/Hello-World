@@ -23,18 +23,24 @@
 12. **禁止 NodePort/LB Service**（`disallow-node-port-lb-service`，`ValidatingPolicy`）：禁止 platform 命名空间的 Service 使用 NodePort 或 LoadBalancer 类型，对外服务统一经 Ingress/APISIX 网关暴露。
 13. **强制 emptyDir 大小限制**（`require-emptydir-size-limit`，`ValidatingPolicy`）：emptyDir 卷必须设置 `sizeLimit`，防止临时存储无限制增长导致节点磁盘耗尽。
 14. **强制镜像拉取策略 Always**（`require-always-pull-policy`，`ValidatingPolicy`）：容器 `imagePullPolicy` 必须为 `Always`，确保从仓库拉取最新签名信息（经签名策略 `mutateDigest` 转 digest 后自动设为 IfNotPresent）。
+15. **强制健康探针**（`require-health-probes`，`ValidatingPolicy`）：全部容器必须配置 `livenessProbe` 与 `readinessProbe`，异常容器自动重启、未就绪不接收流量。
+
+### 工作负载与入口（platform 命名空间）
+
+16. **强制 Deployment 多副本**（`require-deployment-multi-replicas`，`ValidatingPolicy`）：Deployment 副本数必须 >= 2，避免单副本 Pod 故障导致服务中断。
+17. **Ingress 强制 TLS**（`require-ingress-tls`，`ValidatingPolicy`）：Ingress 必须配置 TLS 段且显式声明 hosts，禁止明文 HTTP 对外暴露。
 
 ### RBAC 级（全集群）
 
-15. **禁止 cluster-admin 绑定**（`disallow-cluster-admin-binding`，`ValidatingPolicy`）：禁止 ClusterRoleBinding/RoleBinding 绑定到 cluster-admin 角色，防止权限过度授予。
-16. **禁止通配符 RBAC**（`disallow-wildcard-rbac`，`ValidatingPolicy`）：禁止 Role/ClusterRole 中 verbs/resources/apiGroups 含 `*`，须显式声明最小权限。
-17. **禁止 default SA**（`disallow-default-service-account`，`ValidatingPolicy`）：platform 命名空间 Pod 禁止使用 default ServiceAccount，须显式指定专用 SA。
+18. **禁止 cluster-admin 绑定**（`disallow-cluster-admin-binding`，`ValidatingPolicy`）：禁止 ClusterRoleBinding/RoleBinding 绑定到 cluster-admin 角色，防止权限过度授予。
+19. **禁止通配符 RBAC**（`disallow-wildcard-rbac`，`ValidatingPolicy`）：禁止 Role/ClusterRole 中 verbs/resources/apiGroups 含 `*`，须显式声明最小权限。
+20. **禁止 default SA**（`disallow-default-service-account`，`ValidatingPolicy`）：platform 命名空间 Pod 禁止使用 default ServiceAccount，须显式指定专用 SA。
 
 ### Namespace 级（全集群）
 
-18. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
-19. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
-20. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
+21. **网络隔离声明**（`require-namespace-network-isolation`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/network-policy=default-deny` 标签，表明已配置默认拒绝 NetworkPolicy（零信任网络）。
+22. **资源配额声明**（`require-namespace-quota`，`ValidatingPolicy`）：命名空间必须带 `jsl-platform/resource-quota=enforced` 标签，表明已配置 ResourceQuota。
+23. **必需标签**（`require-namespace-labels`，`ValidatingPolicy`）：命名空间必须有 team / environment / cost-center 标签，用于计费分摊与审计归属。
 
 **策略例外**：默认拒绝，确需豁免时经安全评审后创建 `PolicyException`（仅允许在 kyverno 命名空间创建，由平台管理员统一管理），须设 `expiresAt` 到期自动失效。
 
@@ -62,6 +68,9 @@ deploy/kyverno/
 │   ├── disallow-node-port-lb-service.yaml    # ValidatingPolicy：禁止 NodePort/LB Service
 │   ├── require-emptydir-size-limit.yaml      # ValidatingPolicy：强制 emptyDir 大小限制
 │   ├── require-always-pull-policy.yaml       # ValidatingPolicy：强制镜像拉取策略 Always
+│   ├── require-health-probes.yaml            # ValidatingPolicy：强制 liveness/readiness 探针
+│   ├── require-deployment-multi-replicas.yaml # ValidatingPolicy：Deployment 副本 >= 2
+│   ├── require-ingress-tls.yaml              # ValidatingPolicy：Ingress 强制 TLS
 │   ├── disallow-cluster-admin-binding.yaml   # ValidatingPolicy：禁止 cluster-admin 绑定
 │   ├── disallow-wildcard-rbac.yaml           # ValidatingPolicy：禁止通配符 RBAC 权限
 │   ├── disallow-default-service-account.yaml # ValidatingPolicy：禁止使用 default SA

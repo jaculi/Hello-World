@@ -1,0 +1,39 @@
+# Ingress 强制 TLS（M17 / BP-05 传输加密）
+#
+# 强制 platform 命名空间 Ingress 必须配置 TLS，禁止明文 HTTP 对外暴露。
+# TLS 证书由 cert-manager 自动签发或运维预置，本策略只校验 TLS 段存在。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-ingress-tls
+  annotations:
+    policies.kyverno.io/title: Ingress 强制 TLS
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Ingress
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        resources: ["ingresses"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.spec.?tls.orValue([]).size() > 0
+      message: "Ingress 必须配置 TLS，禁止明文 HTTP 对外暴露"
+    - expression: >-
+        object.spec.tls.all(t, t.?hosts.orValue([]).size() > 0)
+      message: "Ingress TLS 必须显式声明 hosts"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true

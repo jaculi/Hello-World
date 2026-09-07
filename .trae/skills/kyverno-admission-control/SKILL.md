@@ -86,7 +86,15 @@ matchImageReferences:
     - expression: "object.spec.containers.map(c, c.image)"
   ```
 
-## 策略矩阵（二十层纵深防御）
+### 6. Pod 策略自动覆盖工作负载（autogen）
+
+ValidatingPolicy 匹配 `pods` 时，Kyverno 会自动生成对 Deployment/StatefulSet/DaemonSet/Job/CronJob 等控制器 Pod 模板的校验——无需为每种控制器重复编写策略。验证时注意：用 `kubectl create deployment` 测试会先过 Pod 级策略（资源/探针/SA 等），测试工作负载自身规则（如副本数）时须提供合规的 Pod 模板。
+
+### 7. 非 Pod 资源策略关闭后台扫描
+
+匹配 RBAC（roles/clusterroles/bindings）等资源的策略，Kyverno 内置 SA 默认无 get/list/watch 权限，`background.enabled=true` 时策略不 READY（missing permissions）。此类策略设 `evaluation.background.enabled=false`，仅准入时校验。
+
+## 策略矩阵（二十三层纵深防御）
 
 | 层 | 策略 | 类型 | 范围 | 作用 |
 |---|---|---|---|---|
@@ -104,12 +112,15 @@ matchImageReferences:
 | 12 | disallow-node-port-lb-service | ValidatingPolicy | platform ns | 禁止 NodePort/LB Service |
 | 13 | require-emptydir-size-limit | ValidatingPolicy | platform ns | 强制 emptyDir sizeLimit |
 | 14 | require-always-pull-policy | ValidatingPolicy | platform ns | 强制 imagePullPolicy=Always |
-| 15 | disallow-cluster-admin-binding | ValidatingPolicy | 全集群 RBAC | 禁止 cluster-admin 绑定 |
-| 16 | disallow-wildcard-rbac | ValidatingPolicy | 全集群 RBAC | 禁止通配符 RBAC 权限 |
-| 17 | disallow-default-service-account | ValidatingPolicy | platform ns | 禁止使用 default SA |
-| 18 | require-namespace-network-isolation | ValidatingPolicy | 全集群 ns | 网络隔离声明标签 |
-| 19 | require-namespace-quota | ValidatingPolicy | 全集群 ns | 资源配额声明标签 |
-| 20 | require-namespace-labels | ValidatingPolicy | 全集群 ns | team/environment/cost-center |
+| 15 | require-health-probes | ValidatingPolicy | platform ns | 强制 liveness/readiness 探针 |
+| 16 | require-deployment-multi-replicas | ValidatingPolicy | platform ns | Deployment 副本 >= 2 |
+| 17 | require-ingress-tls | ValidatingPolicy | platform ns | Ingress 强制 TLS |
+| 18 | disallow-cluster-admin-binding | ValidatingPolicy | 全集群 RBAC | 禁止 cluster-admin 绑定 |
+| 19 | disallow-wildcard-rbac | ValidatingPolicy | 全集群 RBAC | 禁止通配符 RBAC 权限 |
+| 20 | disallow-default-service-account | ValidatingPolicy | platform ns | 禁止使用 default SA |
+| 21 | require-namespace-network-isolation | ValidatingPolicy | 全集群 ns | 网络隔离声明标签 |
+| 22 | require-namespace-quota | ValidatingPolicy | 全集群 ns | 资源配额声明标签 |
+| 23 | require-namespace-labels | ValidatingPolicy | 全集群 ns | team/environment/cost-center |
 
 ## 策略例外机制（PolicyException）
 

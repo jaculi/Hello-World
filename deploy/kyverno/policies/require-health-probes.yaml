@@ -1,0 +1,40 @@
+# 强制容器健康探针（M17 / BP-04 可观测性·可靠性）
+#
+# 强制 platform 命名空间 Pod 的全部容器必须配置 livenessProbe 与 readinessProbe，
+# 确保异常容器自动重启、未就绪容器不接收流量。
+# startupProbe 可选（慢启动服务用），不强制。
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-health-probes
+  annotations:
+    policies.kyverno.io/title: 强制健康探针
+    policies.kyverno.io/category: Reliability
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 10
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: platform
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        object.spec.containers.all(c, c.?livenessProbe.orValue(null) != null)
+      message: "容器必须配置 livenessProbe，异常容器自动重启"
+    - expression: >-
+        object.spec.containers.all(c, c.?readinessProbe.orValue(null) != null)
+      message: "容器必须配置 readinessProbe，未就绪不接收流量"
+  evaluation:
+    background:
+      enabled: true
+    admission:
+      enabled: true
