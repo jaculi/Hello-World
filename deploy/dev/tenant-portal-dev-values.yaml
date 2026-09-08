@@ -7,7 +7,7 @@
 replicaCount: 1
 image:
   repository: jsl/tenant-portal
-  tag: v0.0.1
+  tag: v0.0.2   # M23：含 refresh token 轮换；本地 kind load 导入
   pullPolicy: Never      # kind load 导入的本地镜像
 
 # issuer 对齐值同基线（hostname + 端口，dev/prod 一致）
