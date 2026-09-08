@@ -1,0 +1,18 @@
+# Docker 构建上下文排除（M19/M21）。
+# 上下文为 web/tenant-portal/，排除仅开发期需要的文件，减小 context、加速构建、避免泄露 .env。
+
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts.bak
+.trae
+.vscode

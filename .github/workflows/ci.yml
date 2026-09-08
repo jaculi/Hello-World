@@ -1,7 +1,7 @@
-# BC 全门禁（步 25 + M6 预留收尾）：buf → lint（含 depguard 自定义规则）
-# → 单测 → 集成测（testcontainers，RLS 实证）→ 制品构建并推 GHCR（master）
+# BC + 门户全门禁：buf → lint（depguard）→ 单测 → 集成测（RLS 实证）
+# → 制品构建并推 GHCR（master，cosign keyless 签名）
+# → 门户质量门禁（next build）→ 门户镜像构建（GHCR + cosign）
 # → e2e（PG+Kafka 黑盒链路：开通→outbox→Kafka 信封 + 全链路冒烟）。
-# 镜像签名（cosign）仍为预留，随制品策略接入启用。
 name: ci
 
 on:
@@ -134,8 +134,91 @@ jobs:
           done
           echo "container smoke FAILED"; docker logs smoke; exit 1
 
+  portal-build:
+    name: ⑦ 门户质量门禁（npm ci + next build）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/tenant-portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/tenant-portal/package-lock.json
+      - run: npm ci
+      - run: npm run build
+        env:
+          AUTH_SECRET: ci-build-placeholder
+
+  portal-image-build:
+    name: ⑧ 门户镜像构建并推送 GHCR + cosign 签名
+    runs-on: ubuntu-latest
+    needs: [portal-build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 镜像标签元数据（master 推 sha-* + latest；PR 仅本地 load）
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/tenant-portal
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+      - name: 构建 tenant-portal 镜像
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: web/tenant-portal
+          file: web/tenant-portal/Dockerfile
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+          load: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+      - name: Keyless 签名（cosign + Fulcio/Rekor，仅 master 推送）
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: sigstore/cosign-installer@v3.7.0
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        name: 签名镜像（按 digest，OIDC 无密钥）
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/tenant-portal
+        run: |
+          cosign sign --yes "${IMAGE}@${IMAGE_DIGEST}"
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        name: 验证签名（Fulcio 证书 + GitHub Actions 发行者）
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/tenant-portal
+          REPO: ${{ github.repository }}
+        run: |
+          cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "^https://github.com/${REPO}/" \
+            "${IMAGE}@${IMAGE_DIGEST}" | jq .
+      - name: 制品冒烟（容器非 root 启动并响应 /healthz）
+        run: |
+          IMG="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tenant-portal:sha-${GITHUB_SHA::7}"
+          docker image inspect "$IMG" >/dev/null 2>&1 || docker pull "$IMG"
+          docker run -d --name portal-smoke -p 3000:3000 -e AUTH_SECRET=ci-smoke "$IMG"
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/healthz | grep -q "ok"; then
+              echo "portal smoke OK"; docker logs portal-smoke; exit 0
+            fi
+            sleep 2
+          done
+          echo "portal smoke FAILED"; docker logs portal-smoke; exit 1
+
   e2e:
-    name: ⑥ 端到端（PG+Kafka 黑盒链路）
+    name: ⑨ 端到端（PG+Kafka 黑盒链路）
     runs-on: ubuntu-latest
     needs: [lint, unit-test, integration-test]
     services:
