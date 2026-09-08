@@ -1,5 +1,7 @@
 # ArgoCD Application：tenant-portal（M20 租户门户，Next.js 15 standalone）。
-# 镜像暂本地构建（jsl/tenant-portal:v0.0.1 + kind load）；CI 构建推送 GHCR 留后续。
+# M22：镜像切 CI 构建的 GHCR 仓库（cosign keyless 签名）+ Always。
+# 注意：GHCR 包默认 private——kind/集群拉取需先创建 imagePullSecrets（或把包设为 public）；
+#       dev 直装（helm）仍用本地镜像 jsl/tenant-portal:vX + kind load。
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -14,8 +16,16 @@ spec:
     targetRevision: master
     path: deploy/helm/tenant-portal
     helm:
+      # dev 环境用 latest（Kyverno mutateDigest 转 digest）；生产应 pin 到 sha-<commit>（BP-04 §6）
       valueFiles:
         - ../../../deploy/dev/tenant-portal-dev-values.yaml
+      parameters:
+        - name: image.repository
+          value: ghcr.io/jaculi/tenant-portal
+        - name: image.tag
+          value: latest
+        - name: image.pullPolicy
+          value: Always
   destination:
     server: https://kubernetes.default.svc
     namespace: platform

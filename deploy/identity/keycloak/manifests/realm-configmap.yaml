@@ -68,6 +68,8 @@ data:
           "enabled": true,
           "emailVerified": true,
           "email": "demo-admin@example.com",
+          "firstName": "Demo",
+          "lastName": "Admin",
           "credentials": [
             { "type": "password", "value": "dev", "temporary": false }
           ],
