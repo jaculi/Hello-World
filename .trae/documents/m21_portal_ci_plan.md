@@ -48,10 +48,18 @@ cosign keyless 签名，与 tenant-bc 制品链对齐。
 
 ## 验证
 
-- [ ] ci.yml YAML 语法正确
-- [ ] `npm run build` 本地通过（TypeScript 编译 + Next.js standalone 输出）
-- [ ] 镜像可本地构建并启动，/healthz 返回 200 ok
-- [ ] master push 后 GHCR 出现 tenant-portal 镜像且带 cosign 签名
+- [x] ci.yml YAML 语法正确（GitHub Actions 解析通过，run 34219114415）
+- [x] `npm run build` 本地通过（Next.js 15.5.25，8 路由编译 + TypeScript 类型检查）
+- [x] 镜像可本地构建并启动，/healthz 返回 200 ok（node:22-alpine，非 root nextjs 用户，679ms ready）
+- [x] master push（c22c1c1）后 CI 8 job 全绿：⑧ portal-image-build 十步全过
+      （构建 → GHCR 推 sha-*/latest → cosign keyless 签名 → Fulcio 证书验证 → /healthz 冒烟）
+
+## 执行记录（2026-09-08）
+
+- 本地验证：npm run build 90s 通过；docker build 成功；容器冒烟 /healthz=ok HTTP 200
+- 推送 master 后 CI run 34219114415 全部 8 job success，新增 ⑦⑧ 两 job 首跑即绿
+- 门户制品链与 tenant-bc 对齐完成：GHCR `ghcr.io/jaculi/tenant-portal`（sha-<short> + latest），
+  cosign keyless 签名（Fulcio + GitHub Actions OIDC），Kyverno 镜像验证策略可直接沿用
 
 ## 范围外
 
