@@ -1,0 +1,39 @@
+# Kyverno kind/dev overlay（M24）。
+# 基线 values.yaml 按生产给 admissionController=3 / backgroundController=2 副本；
+# 单节点 kind 上多副本不提供高可用、反而对 Docker Desktop 慢磁盘上的 etcd 制造
+# 3 倍 watch/lease 压力（实测 etcd apply 请求 0.8-3.2s，health 检查超时，
+# 控制器 CrashLoop 与启动风暴互为因果）。dev 统一单副本 + 降低资源请求。
+admissionController:
+  replicas: 1
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+backgroundController:
+  replicas: 1
+  resources:
+    limits:
+      memory: 256Mi
+    requests:
+      cpu: 25m
+      memory: 64Mi
+
+# reports-controller 默认单副本（CEL 策略报告需要），仅压缩资源
+reportsController:
+  resources:
+    limits:
+      memory: 256Mi
+    requests:
+      cpu: 25m
+      memory: 64Mi
+
+cleanupController:
+  resources:
+    limits:
+      memory: 256Mi
+    requests:
+      cpu: 25m
+      memory: 64Mi

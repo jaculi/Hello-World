@@ -1,6 +1,9 @@
 # ArgoCD Application：Kyverno 安装（M9 对齐 / M24 GitOps 实证）
-# multi-source：chart 取自官方 Helm 仓库，values 取自本仓 deploy/kyverno/values.yaml
+# multi-source：chart 取自官方 Helm 仓库，values 取自本仓 deploy/kyverno/
 # （$values 引用要求声明 ref: values 的 git source，缺则同步失败）。
+# 当前为 dev/kind 实例：基线 values.yaml（生产副本/资源）+ values-dev.yaml 覆盖
+# （单副本，避免多副本对单节点 etcd 的 watch/lease 压力压垮慢磁盘）。
+# 生产实例（后续）：另建 kyverno-prod Application，仅引用基线 values.yaml。
 # targetRevision 与 kind 实证版本对齐（chart 3.9.0 = Kyverno v1.19.x）。
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -18,6 +21,7 @@ spec:
       helm:
         valueFiles:
           - $values/deploy/kyverno/values.yaml
+          - $values/deploy/kyverno/values-dev.yaml
     - repoURL: https://github.com/jaculi/Hello-World.git
       targetRevision: master
       ref: values
