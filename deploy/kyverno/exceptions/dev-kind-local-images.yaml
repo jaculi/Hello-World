@@ -1,0 +1,33 @@
+# dev/kind 本地镜像供应链策略例外（M24 阶段 A，短期豁免）。
+#
+# 背景：kind 实证用 kind load 导入的本地镜像（jsl/tenant-bc:vX、jsl/tenant-portal:vX，
+# pullPolicy=Never）。生产供应链三策略（仓库白名单 / 强制 Always / cosign 验签）语义上
+# 要求镜像来自 GHCR，对本地镜像会误拒。阶段 B（GHCR 包 public + ArgoCD 切 GHCR 镜像）
+# 完成后本例外即删除，三策略恢复对 platform 命名空间全域强制。
+#
+# 例外约束（BP-05 / M11 约定）：
+#   - 仅匹配 platform 命名空间内、镜像前缀为 jsl/ 的 Pod（最小豁免面）
+#   - expiresAt 到期自动失效（2026-10-15，覆盖阶段 B 窗口）
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: dev-kind-local-images
+  namespace: kyverno
+  labels:
+    jsl-platform/exception-review: "true"
+    jsl-platform/environment: "dev-kind"
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: platform-registry-allowlist
+    - kind: ValidatingPolicy
+      name: require-always-pull-policy
+    - kind: ImageValidatingPolicy
+      name: verify-image-signatures
+  matchConditions:
+    - name: dev-kind-platform-local-images
+      expression: >-
+        object.metadata.namespace == 'platform' &&
+        object.spec.containers.all(c, c.image.startsWith('jsl/')) &&
+        (object.spec.?initContainers.orValue([])).all(c, c.image.startsWith('jsl/'))
+  expiresAt: "2026-10-15T00:00:00Z"

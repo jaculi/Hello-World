@@ -1,0 +1,27 @@
+# ArgoCD Application：Kyverno 策略例外（M11 例外机制 / M24 dev-kind 豁免）。
+# 例外资源必须落在 kyverno 命名空间（chart values features.policyExceptions.namespace 约束），
+# 防止业务命名空间自建例外绕过策略。template.yaml.example 为文档模板（.example 后缀不被 apply）。
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-exceptions
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: jsl-platform
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jaculi/Hello-World.git
+    targetRevision: master
+    path: deploy/kyverno/exceptions
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

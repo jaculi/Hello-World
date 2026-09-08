@@ -1,6 +1,7 @@
-# ArgoCD Application：Kyverno 安装（M9 对齐，GitOps）
-# 从官方 Helm 仓库安装 Kyverno，values 取自本仓 deploy/kyverno/values.yaml。
-# targetRevision 与 kind 实证版本对齐（chart 3.9.0 = Kyverno v1.19.0）。
+# ArgoCD Application：Kyverno 安装（M9 对齐 / M24 GitOps 实证）
+# multi-source：chart 取自官方 Helm 仓库，values 取自本仓 deploy/kyverno/values.yaml
+# （$values 引用要求声明 ref: values 的 git source，缺则同步失败）。
+# targetRevision 与 kind 实证版本对齐（chart 3.9.0 = Kyverno v1.19.x）。
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -10,13 +11,16 @@ metadata:
     app.kubernetes.io/part-of: jsl-platform
 spec:
   project: default
-  source:
-    repoURL: https://kyverno.github.io/kyverno
-    chart: kyverno
-    targetRevision: 3.9.0
-    helm:
-      valueFiles:
-        - $values/deploy/kyverno/values.yaml
+  sources:
+    - repoURL: https://kyverno.github.io/kyverno
+      chart: kyverno
+      targetRevision: 3.9.0
+      helm:
+        valueFiles:
+          - $values/deploy/kyverno/values.yaml
+    - repoURL: https://github.com/jaculi/Hello-World.git
+      targetRevision: master
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno
